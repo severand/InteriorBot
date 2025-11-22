@@ -5,14 +5,19 @@
 # [2025-11-22 11:15 CET] Исправление: Блокировка всех сообщений, кроме кнопок, в состоянии choose_room. Добавлен хэндлер кнопки "Загрузить новое фото".
 # [2025-11-22 11:40 CET] Исправление: Внедрена гарантированная блокировка новых фото/текста в choose_room. Добавлено подробное логирование (logger.debug) для отладки приоритетов хэндлеров.
 # [2025-11-22 11:45 CET] Критическое исправление: Консолидация блокировки сообщений в choose_room в один Catch-All хэндлер и добавление сброса состояния при попытке отправить фото/текст, чтобы принудительно вернуть пользователя в начало потока (waiting_for_photo).
+# [2025-11-22 15:01 MSK] КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Упрощена логика блокировки сообщений, убраны счетчики спама, добавлено корректное удаление сообщений с обработкой ошибок.
+# [2025-11-22 15:12 MSK] НОВОЕ ИСПРАВЛЕНИЕ: Добавлен глобальный блокировщик фото ВНЕ состояния waiting_for_photo. Теперь фото можно загружать ТОЛЬКО после нажатия "Создать дизайн".
 # ---
 
+import asyncio
 import logging
 
 from aiogram import Router, F
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
+from aiogram.exceptions import TelegramBadRequest
+
 # Импорты наших модулей
 from database.db import db
 from keyboards.inline import get_room_keyboard, get_style_keyboard, get_payment_keyboard, get_post_generation_keyboard
@@ -27,7 +32,51 @@ router = Router()
 
 
 # =========================================================================
-# 1. ОБРАБОТКА ФОТО
+# 0. ГЛОБАЛЬНАЯ БЛОКИРОВКА ФОТО ВНЕ ПРОЦЕССА СОЗДАНИЯ
+# =========================================================================
+
+@router.message(F.photo)
+async def block_unexpected_photos(message: Message, state: FSMContext):
+    """
+    КРИТИЧЕСКИЙ БЛОКИРОВЩИК: Если пользователь НЕ в состоянии waiting_for_photo,
+    любые фото блокируются и удаляются.
+    """
+    current_state = await state.get_state()
+
+    # Проверяем: находится ли пользователь в правильном состоянии
+    if current_state != CreationStates.waiting_for_photo:
+        logger.debug(
+            f"🚫 БЛОКИРОВКА: Попытка загрузить фото вне процесса создания. "
+            f"User: {message.from_user.id}, State: {current_state}"
+        )
+
+        # Удаляем нежелательное фото
+        try:
+            await message.delete()
+            logger.debug(f"✅ Неожиданное фото удалено. Msg ID: {message.message_id}")
+        except TelegramBadRequest as e:
+            logger.warning(f"❌ Не удалось удалить фото: {e}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка удаления фото: {e}")
+
+        # Отправляем предупреждение
+        warning_msg = await message.answer(
+            "🚫 Для загрузки фото сначала выберите пункт *'Создать дизайн'* в меню!",
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+        # Автоудаление предупреждения через 5 секунд
+        await asyncio.sleep(5)
+        try:
+            await warning_msg.delete()
+        except Exception:
+            pass
+
+        return  # Прерываем дальнейшую обработку
+
+
+# =========================================================================
+# 1. ОБРАБОТКА ФОТО (ТОЛЬКО В СОСТОЯНИИ waiting_for_photo)
 # =========================================================================
 
 @router.message(CreationStates.waiting_for_photo, F.photo)
@@ -39,8 +88,7 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
     logger.debug(f"Хэндлер photo_uploaded сработал. ID пользователя: {message.from_user.id}")
     user_id = message.from_user.id
 
-    # --------------------------------------------------------------------
-    # ИСПРАВЛЕНИЕ: 🛑 БЛОКИРОВКА АЛЬБОМОВ С КЭШИРОВАНИЕМ
+    # БЛОКИРОВКА АЛЬБОМОВ С КЭШИРОВАНИЕМ
     if message.media_group_id:
         data = await state.get_data()
         cached_group_id = data.get('media_group_id')
@@ -55,11 +103,10 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
         return
 
     await state.update_data(media_group_id=None)
-    # --------------------------------------------------------------------
 
     photo_file_id = message.photo[-1].file_id
 
-    # 1. ПРОВЕРКА АДМИНА: пропускаем проверку баланса, если админ
+    # ПРОВЕРКА АДМИНА: пропускаем проверку баланса, если админ
     if user_id not in admins:
         balance = await db.get_balance(user_id)
 
@@ -73,7 +120,6 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
             return
 
     await state.update_data(photo_id=photo_file_id)
-
     await state.set_state(CreationStates.choose_room)
     logger.debug(f"Состояние изменено на choose_room. Отправка меню выбора комнаты.")
 
@@ -94,7 +140,6 @@ async def invalid_photo(message: Message):
 # 2. ВЫБОР КОМНАТЫ
 # =========================================================================
 
-# НОВОЕ ИСПРАВЛЕНИЕ: ХЭНДЛЕР ДЛЯ КНОПКИ "ЗАГРУЗИТЬ НОВОЕ ФОТО"
 @router.callback_query(CreationStates.choose_room, F.data == "create_design")
 async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
     """
@@ -102,39 +147,16 @@ async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
     """
     logger.debug("Хэндлер choose_new_photo сработал. Переход в waiting_for_photo.")
 
-    # Сброс состояния, чтобы удалить 'room', но сохранить 'photo_id' для переиспользования, если он есть.
     current_data = await state.get_data()
     photo_id = current_data.get('photo_id')
     await state.clear()
 
-    # Сохраняем ID фото для переиспользования
     if photo_id:
         await state.update_data(photo_id=photo_id)
 
     await state.set_state(CreationStates.waiting_for_photo)
     await callback.message.edit_text(UPLOAD_PHOTO_TEXT)
     await callback.answer()
-
-
-# НОВОЕ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Catch-All для всех сообщений (фото, текст и т.д.) в choose_room
-@router.message(CreationStates.choose_room)
-async def block_all_non_callback_messages_in_room_choice(message: Message, state: FSMContext):
-    """
-    Блокирует любое сообщение (кроме колбэка) в состоянии choose_room, сбрасывая состояние.
-    """
-    logger.debug(
-        "Хэндлер block_all_non_callback_messages_in_room_choice сработал. Обнаружено нежелательное сообщение (фото/текст).")
-
-    # Сбрасываем все данные и принудительно возвращаем в начальное состояние
-    await state.clear()
-    await state.set_state(CreationStates.waiting_for_photo)
-
-    await message.answer(
-        "🚫 *Остановлено.* Пожалуйста, используйте только кнопки или начните сначала. "
-        "Теперь вы снова можете *загрузить фотографию* для нового дизайна.",
-        parse_mode=ParseMode.MARKDOWN
-    )
-    return
 
 
 @router.callback_query(CreationStates.choose_room, F.data.startswith("room_"))
@@ -159,7 +181,6 @@ async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[i
             return
 
     await state.update_data(room=room)
-
     await state.set_state(CreationStates.choose_style)
     logger.debug("Состояние изменено на choose_style. Отправка меню выбора стиля.")
 
@@ -168,6 +189,53 @@ async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[i
         reply_markup=get_style_keyboard()
     )
     await callback.answer()
+
+
+# КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Блокировка всех сообщений в choose_room
+@router.message(CreationStates.choose_room)
+async def block_messages_in_choose_room(message: Message, state: FSMContext):
+    """
+    Блокирует любое сообщение в состоянии choose_room.
+    УДАЛЯЕТ сообщение и сбрасывает состояние.
+    """
+    logger.debug(
+        f"🚫 Блокировка сообщения в choose_room. "
+        f"User: {message.from_user.id}, Msg ID: {message.message_id}"
+    )
+
+    # УДАЛЯЕМ нежелательное сообщение
+    try:
+        await message.delete()
+        logger.debug(f"✅ Сообщение {message.message_id} удалено")
+    except TelegramBadRequest as e:
+        logger.warning(f"❌ Не удалось удалить сообщение: {e}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка удаления сообщения: {e}")
+
+    # СБРОС СОСТОЯНИЯ
+    await state.clear()
+    await state.set_state(CreationStates.waiting_for_photo)
+
+    # ОТПРАВКА ПРЕДУПРЕЖДЕНИЯ
+    try:
+        warning_msg = await message.answer(
+            "🚫 Пожалуйста, используйте только кнопки меню!\n\n"
+            "Загрузите новую фотографию для начала.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+        logger.debug(f"📨 Предупреждение отправлено. ID: {warning_msg.message_id}")
+
+        # АВТОУДАЛЕНИЕ через 5 секунд
+        await asyncio.sleep(5)
+        try:
+            await warning_msg.delete()
+            logger.debug(f"🗑 Предупреждение удалено")
+        except Exception:
+            pass
+
+    except Exception as e:
+        logger.error(f"Ошибка отправки предупреждения: {e}")
 
 
 # =========================================================================
@@ -182,7 +250,7 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     style = callback.data.split("_")[-1]
     user_id = callback.from_user.id
 
-    # 1. Проверяем баланс (финальная проверка, только если не админ)
+    # Проверяем баланс (финальная проверка, только если не админ)
     if user_id not in admins:
         balance = await db.get_balance(user_id)
         if balance <= 0:
@@ -194,26 +262,25 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
             )
             return
 
-    # 2. Получаем все данные для генерации
+    # Получаем все данные для генерации
     data = await state.get_data()
     photo_id = data.get('photo_id')
     room = data.get('room')
 
-    # 3. Уменьшаем баланс (Только если пользователь НЕ админ)
+    # Уменьшаем баланс (Только если пользователь НЕ админ)
     if user_id not in admins:
         await db.decrease_balance(user_id)
         logger.info(f"Баланс пользователя {user_id} уменьшен на 1.")
 
-    # 4. Сообщаем о начале генерации
+    # Сообщаем о начале генерации
     await callback.message.edit_text("⏳ Генерирую новый дизайн... Это может занять до 30 секунд.")
     await callback.answer()
 
-    # 5. Генерируем изображение через API Replicate
+    # Генерируем изображение через API Replicate
     result_image_url = await generate_image(photo_id, room, style, bot_token)
     logger.debug(f"Генерация завершена. Результат URL: {result_image_url}")
 
     if result_image_url:
-        # 6. Отправляем результат
         await callback.message.answer_photo(
             photo=result_image_url,
             caption=f"Ваш новый дизайн в стиле *{style.replace('_', ' ').title()}*!",
@@ -234,7 +301,7 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
     Позволяет пользователю выбрать другой стиль для уже загруженной фотографии.
     """
     logger.debug("Хэндлер change_style_after_gen сработал.")
-    # 1. Проверка на наличие фото в состоянии (предотвращает ошибки)
+
     data = await state.get_data()
     if 'photo_id' not in data:
         logger.warning("Попытка сменить стиль без загруженного фото. Сброс состояния.")
@@ -243,11 +310,9 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(UPLOAD_PHOTO_TEXT)
         return
 
-    # 2. Устанавливаем новое состояние
     await state.set_state(CreationStates.choose_style)
     logger.debug("Состояние изменено на choose_style. Отправка меню выбора стиля.")
 
-    # 3. Выводим клавиатуру стилей
     await callback.message.edit_text(
         CHOOSE_STYLE_TEXT,
         reply_markup=get_style_keyboard()
