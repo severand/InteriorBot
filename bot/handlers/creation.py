@@ -1,14 +1,27 @@
+# --- ИСПРАВЛЕНИЯ ВЕРСИИ: bot/handlers/creation.py ---
+# [2025-11-22 10:30 CET] Исправление: Добавлена блокировка отправки альбомов (проверка message.media_group_id).
+# [2025-11-22 10:30 CET] Исправление: Добавлена проверка 'photo_id' в change_style_after_gen для предотвращения ошибок без фото.
+# [2025-11-22 11:00 CET] Исправление: Добавлено кэширование media_group_id для отправки предупреждения об альбоме только ОДИН раз.
+# [2025-11-22 11:15 CET] Исправление: Блокировка всех сообщений, кроме кнопок, в состоянии choose_room. Добавлен хэндлер кнопки "Загрузить новое фото".
+# [2025-11-22 11:40 CET] Исправление: Внедрена гарантированная блокировка новых фото/текста в choose_room. Добавлено подробное логирование (logger.debug) для отладки приоритетов хэндлеров.
+# [2025-11-22 11:45 CET] Критическое исправление: Консолидация блокировки сообщений в choose_room в один Catch-All хэндлер и добавление сброса состояния при попытке отправить фото/текст, чтобы принудительно вернуть пользователя в начало потока (waiting_for_photo).
+# ---
+
+import logging
+
 from aiogram import Router, F
+from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
-from aiogram.enums import ParseMode
-
 # Импорты наших модулей
 from database.db import db
-from states.fsm import CreationStates
 from keyboards.inline import get_room_keyboard, get_style_keyboard, get_payment_keyboard, get_post_generation_keyboard
-from services.replicate_api import generate_image  # <-- Импорт теперь работает
-from utils.texts import CHOOSE_STYLE_TEXT, PHOTO_SAVED_TEXT, NO_BALANCE_TEXT
+from services.replicate_api import generate_image
+from states.fsm import CreationStates
+from utils.texts import CHOOSE_STYLE_TEXT, PHOTO_SAVED_TEXT, NO_BALANCE_TEXT, TOO_MANY_PHOTOS_TEXT, UPLOAD_PHOTO_TEXT
+
+# Инициализация логгера
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -19,24 +32,39 @@ router = Router()
 
 @router.message(CreationStates.waiting_for_photo, F.photo)
 async def photo_uploaded(message: Message, state: FSMContext, admins: list[int]):
-    """Сохраняет фото в состояние и предлагает выбрать комнату"""
-
-    photo_file_id = message.photo[-1].file_id
+    """
+    Сохраняет фото в состояние и предлагает выбрать комнату.
+    Блокирует отправку альбомов.
+    """
+    logger.debug(f"Хэндлер photo_uploaded сработал. ID пользователя: {message.from_user.id}")
     user_id = message.from_user.id
 
-    # ----------------------------------------------------
-    print(f"\n--- ПРОВЕРКА АДМИНА: ОБРАБОТКА ФОТО ---")
-    print(f"User ID: {user_id}")
-    print(f"Admin IDs: {admins}")
-    print(f"User ID in Admins: {user_id in admins}")
-    print(f"----------------------------------------\n")
-    # ----------------------------------------------------
+    # --------------------------------------------------------------------
+    # ИСПРАВЛЕНИЕ: 🛑 БЛОКИРОВКА АЛЬБОМОВ С КЭШИРОВАНИЕМ
+    if message.media_group_id:
+        data = await state.get_data()
+        cached_group_id = data.get('media_group_id')
+
+        if cached_group_id == message.media_group_id:
+            logger.debug(f"Игнорирование повторного сообщения альбома: {message.media_group_id}")
+            return
+
+        await state.update_data(media_group_id=message.media_group_id)
+        await message.answer(TOO_MANY_PHOTOS_TEXT)
+        logger.debug(f"Отправлено предупреждение об альбоме: {message.media_group_id}")
+        return
+
+    await state.update_data(media_group_id=None)
+    # --------------------------------------------------------------------
+
+    photo_file_id = message.photo[-1].file_id
 
     # 1. ПРОВЕРКА АДМИНА: пропускаем проверку баланса, если админ
     if user_id not in admins:
         balance = await db.get_balance(user_id)
 
         if balance <= 0:
+            logger.info(f"Пользователь {user_id} исчерпал баланс.")
             await state.clear()
             await message.answer(
                 NO_BALANCE_TEXT,
@@ -47,6 +75,7 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
     await state.update_data(photo_id=photo_file_id)
 
     await state.set_state(CreationStates.choose_room)
+    logger.debug(f"Состояние изменено на choose_room. Отправка меню выбора комнаты.")
 
     await message.answer(
         PHOTO_SAVED_TEXT,
@@ -57,6 +86,7 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
 @router.message(CreationStates.waiting_for_photo)
 async def invalid_photo(message: Message):
     """Обрабатывает невалидный ввод вместо фото"""
+    logger.debug(f"Хэндлер invalid_photo сработал. Пользователь отправил не фото в ожидании фото.")
     await message.answer("Пожалуйста, отправьте фотографию комнаты.")
 
 
@@ -64,26 +94,63 @@ async def invalid_photo(message: Message):
 # 2. ВЫБОР КОМНАТЫ
 # =========================================================================
 
+# НОВОЕ ИСПРАВЛЕНИЕ: ХЭНДЛЕР ДЛЯ КНОПКИ "ЗАГРУЗИТЬ НОВОЕ ФОТО"
+@router.callback_query(CreationStates.choose_room, F.data == "create_design")
+async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
+    """
+    Обрабатывает нажатие на кнопку 'Загрузить новое фото' и переводит в состояние ожидания фото.
+    """
+    logger.debug("Хэндлер choose_new_photo сработал. Переход в waiting_for_photo.")
+
+    # Сброс состояния, чтобы удалить 'room', но сохранить 'photo_id' для переиспользования, если он есть.
+    current_data = await state.get_data()
+    photo_id = current_data.get('photo_id')
+    await state.clear()
+
+    # Сохраняем ID фото для переиспользования
+    if photo_id:
+        await state.update_data(photo_id=photo_id)
+
+    await state.set_state(CreationStates.waiting_for_photo)
+    await callback.message.edit_text(UPLOAD_PHOTO_TEXT)
+    await callback.answer()
+
+
+# НОВОЕ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Catch-All для всех сообщений (фото, текст и т.д.) в choose_room
+@router.message(CreationStates.choose_room)
+async def block_all_non_callback_messages_in_room_choice(message: Message, state: FSMContext):
+    """
+    Блокирует любое сообщение (кроме колбэка) в состоянии choose_room, сбрасывая состояние.
+    """
+    logger.debug(
+        "Хэндлер block_all_non_callback_messages_in_room_choice сработал. Обнаружено нежелательное сообщение (фото/текст).")
+
+    # Сбрасываем все данные и принудительно возвращаем в начальное состояние
+    await state.clear()
+    await state.set_state(CreationStates.waiting_for_photo)
+
+    await message.answer(
+        "🚫 *Остановлено.* Пожалуйста, используйте только кнопки или начните сначала. "
+        "Теперь вы снова можете *загрузить фотографию* для нового дизайна.",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    return
+
+
 @router.callback_query(CreationStates.choose_room, F.data.startswith("room_"))
 async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """Обрабатывает выбор типа комнаты и предлагает выбрать стиль"""
+    logger.debug(f"Хэндлер room_chosen сработал. Выбрана комната: {callback.data.split('_')[-1]}")
 
     room = callback.data.split("_")[-1]
     user_id = callback.from_user.id
-
-    # ----------------------------------------------------
-    print(f"\n--- ПРОВЕРКА АДМИНА: ВЫБОР КОМНАТЫ ---")
-    print(f"User ID: {user_id}")
-    print(f"Admin IDs: {admins}")
-    print(f"User ID in Admins: {user_id in admins}")
-    print(f"---------------------------------------\n")
-    # ----------------------------------------------------
 
     # ПРОВЕРЯЕМ БАЛАНС ТОЛЬКО, ЕСЛИ ПОЛЬЗОВАТЕЛЬ НЕ АДМИН
     if user_id not in admins:
         balance = await db.get_balance(user_id)
 
         if balance <= 0:
+            logger.info(f"Пользователь {user_id} исчерпал баланс при выборе комнаты.")
             await state.clear()
             await callback.message.edit_text(
                 NO_BALANCE_TEXT,
@@ -94,6 +161,7 @@ async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[i
     await state.update_data(room=room)
 
     await state.set_state(CreationStates.choose_style)
+    logger.debug("Состояние изменено на choose_style. Отправка меню выбора стиля.")
 
     await callback.message.edit_text(
         CHOOSE_STYLE_TEXT,
@@ -107,25 +175,18 @@ async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[i
 # =========================================================================
 
 @router.callback_query(CreationStates.choose_style, F.data.startswith("style_"))
-# ДОБАВЛЕНО: bot_token: str
 async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
     """Обрабатывает выбор стиля, генерирует изображение и уменьшает баланс"""
+    logger.debug(f"Хэндлер style_chosen сработал. Выбран стиль: {callback.data.split('_')[-1]}")
 
     style = callback.data.split("_")[-1]
     user_id = callback.from_user.id
-
-    # ----------------------------------------------------
-    print(f"\n--- ПРОВЕРКА АДМИНА: ОБРАБОТКА СТИЛЯ ---")
-    print(f"User ID: {user_id}")
-    print(f"Admin IDs: {admins}")
-    print(f"User ID in Admins: {user_id in admins}")
-    print(f"----------------------------------------\n")
-    # ----------------------------------------------------
 
     # 1. Проверяем баланс (финальная проверка, только если не админ)
     if user_id not in admins:
         balance = await db.get_balance(user_id)
         if balance <= 0:
+            logger.info(f"Пользователь {user_id} исчерпал баланс перед генерацией.")
             await state.clear()
             await callback.message.edit_text(
                 NO_BALANCE_TEXT,
@@ -138,29 +199,28 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     photo_id = data.get('photo_id')
     room = data.get('room')
 
-    # state.clear() удалено, чтобы сохранить данные для кнопки "Показать новый стиль"
-
     # 3. Уменьшаем баланс (Только если пользователь НЕ админ)
     if user_id not in admins:
         await db.decrease_balance(user_id)
+        logger.info(f"Баланс пользователя {user_id} уменьшен на 1.")
 
     # 4. Сообщаем о начале генерации
     await callback.message.edit_text("⏳ Генерирую новый дизайн... Это может занять до 30 секунд.")
     await callback.answer()
 
     # 5. Генерируем изображение через API Replicate
-    # ИСПРАВЛЕНИЕ: Передаем bot_token
     result_image_url = await generate_image(photo_id, room, style, bot_token)
+    logger.debug(f"Генерация завершена. Результат URL: {result_image_url}")
 
     if result_image_url:
         # 6. Отправляем результат
         await callback.message.answer_photo(
             photo=result_image_url,
             caption=f"Ваш новый дизайн в стиле *{style.replace('_', ' ').title()}*!",
-            # ИСПОЛЬЗУЕМ НОВУЮ КЛАВИАТУРУ
             reply_markup=get_post_generation_keyboard()
         )
     else:
+        logger.error("Ошибка при генерации изображения через API Replicate.")
         await callback.message.answer("К сожалению, произошла ошибка генерации. Попробуйте еще раз.")
 
 
@@ -173,10 +233,21 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
     """
     Позволяет пользователю выбрать другой стиль для уже загруженной фотографии.
     """
-    # 1. Устанавливаем новое состояние
-    await state.set_state(CreationStates.choose_style)
+    logger.debug("Хэндлер change_style_after_gen сработал.")
+    # 1. Проверка на наличие фото в состоянии (предотвращает ошибки)
+    data = await state.get_data()
+    if 'photo_id' not in data:
+        logger.warning("Попытка сменить стиль без загруженного фото. Сброс состояния.")
+        await state.set_state(CreationStates.waiting_for_photo)
+        await callback.answer("⚠️ Сначала загрузите фотографию!", show_alert=True)
+        await callback.message.edit_text(UPLOAD_PHOTO_TEXT)
+        return
 
-    # 2. Выводим клавиатуру стилей
+    # 2. Устанавливаем новое состояние
+    await state.set_state(CreationStates.choose_style)
+    logger.debug("Состояние изменено на choose_style. Отправка меню выбора стиля.")
+
+    # 3. Выводим клавиатуру стилей
     await callback.message.edit_text(
         CHOOSE_STYLE_TEXT,
         reply_markup=get_style_keyboard()
