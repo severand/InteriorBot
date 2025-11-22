@@ -1,0 +1,123 @@
+from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup
+
+# --- Настройки пакетов для покупки ---
+# (токены: цена)
+PACKAGES = {
+    10: 290,
+    25: 490,
+    60: 990
+}
+
+# --- Настройки комнат и стилей ---
+ROOM_TYPES = {
+    "living_room": "Гостиная 🛋️",
+    "bedroom": "Спальня 🛌",
+    "kitchen": "Кухня 🍽️",
+    "office": "Офис 🖥️",
+}
+
+STYLE_TYPES = {
+    "modern": "Современный ✨",
+    "minimalist": "Минимализм ⚪",
+    "scandinavian": "Скандинавский 🌲",
+    "industrial": "Индустриальный ⚙️",
+    "rustic": "Рустик 🌾",
+}
+
+
+def get_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """Генерирует главное меню."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="🎨 Создать дизайн", callback_data="create_design")
+    )
+    builder.row(
+        InlineKeyboardButton(text="👤 Профиль", callback_data="show_profile")
+    )
+    builder.row(
+        InlineKeyboardButton(text="💎 Купить генерации", callback_data="buy_generations")
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_room_keyboard() -> InlineKeyboardMarkup:
+    """Генерирует кнопки для выбора типа комнаты."""
+    builder = InlineKeyboardBuilder()
+
+    # Добавляем кнопки комнат
+    for key, text in ROOM_TYPES.items():
+        # callback_data будет иметь вид: room_living_room
+        builder.button(text=text, callback_data=f"room_{key}")
+
+    builder.row(
+        InlineKeyboardButton(text="⬅️ Загрузить новое фото", callback_data="create_design")
+    )
+    builder.adjust(2)  # Две кнопки в ряд
+    return builder.as_markup()
+
+
+def get_style_keyboard() -> InlineKeyboardMarkup:
+    """Генерирует кнопки для выбора стиля дизайна."""
+    builder = InlineKeyboardBuilder()
+
+    # Добавляем кнопки стилей
+    for key, text in STYLE_TYPES.items():
+        # callback_data будет иметь вид: style_modern
+        builder.button(text=text, callback_data=f"style_{key}")
+
+    builder.adjust(2)  # Две кнопки в ряд
+    return builder.as_markup()
+
+
+def get_payment_keyboard() -> InlineKeyboardMarkup:
+    """Генерирует кнопки для выбора пакетов генераций."""
+    builder = InlineKeyboardBuilder()
+
+    # Добавляем кнопки пакетов
+    for tokens, price in PACKAGES.items():
+        # callback_data будет иметь вид: pay_10_290
+        button_text = f"{tokens} генераций - {price} руб."
+        builder.button(text=button_text, callback_data=f"pay_{tokens}_{price}")
+
+    builder.row(
+        InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="show_profile")
+    )
+    builder.adjust(1)  # Одна кнопка в ряд
+    return builder.as_markup()
+
+
+def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
+    """Кнопки для перехода к оплате и проверки статуса."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="💰 Перейти к оплате", url=url)
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔄 Я оплатил! (Проверить)", callback_data="check_payment")
+    )
+    builder.row(
+        InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="show_profile")
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_post_generation_keyboard() -> InlineKeyboardMarkup:
+    """Кнопки после успешной генерации с вариантами продолжения."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="🎨 Показать новый стиль", callback_data="change_style")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📸 Загрузить другое фото", callback_data="create_design")
+    )
+    builder.row(
+        InlineKeyboardButton(text="👤 Перейти в профиль", callback_data="show_profile")
+    )
+    builder.adjust(1)
+    return builder.as_markup()
