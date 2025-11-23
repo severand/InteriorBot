@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from aiogram.exceptions import TelegramBadRequest
 
-# Импорты наших модулей
+# Импортируем свои модули
 from database.db import db
 from keyboards.inline import (
     get_room_keyboard,
@@ -35,7 +35,6 @@ router = Router()
 async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse_mode: str = "Markdown"):
     data = await state.get_data()
     old_menu_id = data.get('menu_message_id')
-    # Попытка плавного редактирования существующего меню
     if old_menu_id:
         try:
             await sender.bot.edit_message_text(
@@ -58,6 +57,7 @@ async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse
             pass
     return menu.message_id
 
+# ===== ГЛАВНЫЙ МЕНЮ И СТАРТ =====
 @router.callback_query(F.data == "main_menu")
 async def go_to_main_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -71,24 +71,21 @@ async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
     await show_single_menu(callback.message, state, UPLOAD_PHOTO_TEXT, None)
     await callback.answer()
 
+# ===== ХЭНДЛЕР ОБРАБОТКИ ФОТО =====
 @router.message(CreationStates.waiting_for_photo, F.photo)
 async def photo_uploaded(message: Message, state: FSMContext, admins: list[int]):
     user_id = message.from_user.id
     if message.media_group_id:
         data = await state.get_data()
         cached_group_id = data.get('media_group_id')
-        try:
-            await message.delete()
-        except Exception:
-            pass
+        try: await message.delete()
+        except: pass
         if cached_group_id != message.media_group_id:
             await state.update_data(media_group_id=message.media_group_id)
             msg = await message.answer(TOO_MANY_PHOTOS_TEXT)
             await asyncio.sleep(3)
-            try:
-                await msg.delete()
-            except:
-                pass
+            try: await msg.delete()
+            except: pass
         return
     await state.update_data(media_group_id=None)
     photo_file_id = message.photo[-1].file_id
@@ -100,10 +97,13 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
             return
     await state.update_data(photo_id=photo_file_id)
     await state.set_state(CreationStates.choose_room)
-    # Задержка для корректного порядка (фото -> меню)
-    await asyncio.sleep(0.15)
-    await show_single_menu(message, state, PHOTO_SAVED_TEXT, get_room_keyboard())
+    menu_msg = await message.answer(
+        PHOTO_SAVED_TEXT,
+        reply_markup=get_room_keyboard()
+    )
+    await state.update_data(menu_message_id=menu_msg.message_id)
 
+# ===== ВЫБОР КОМНАТЫ =====
 @router.callback_query(CreationStates.choose_room, F.data.startswith("room_"))
 async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     room = callback.data.split("_")[-1]
@@ -119,6 +119,7 @@ async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[i
     await show_single_menu(callback.message, state, CHOOSE_STYLE_TEXT, get_style_keyboard())
     await callback.answer()
 
+# ===== ВЫБОР СТИЛЯ/ВАРИАНТА И ГЕНЕРАЦИЯ =====
 @router.callback_query(CreationStates.choose_style, F.data == "back_to_room")
 async def back_to_room_selection(callback: CallbackQuery, state: FSMContext):
     await state.set_state(CreationStates.choose_room)
