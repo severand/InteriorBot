@@ -36,16 +36,29 @@ router = Router()
 async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse_mode: str = "Markdown"):
     data = await state.get_data()
     old_menu_id = data.get('menu_message_id')
-    # Новое меню
+    # Попытка плавного редактирования существующего меню
+    if old_menu_id:
+        try:
+            await sender.bot.edit_message_text(
+                chat_id=sender.chat.id,
+                message_id=old_menu_id,
+                text=text,
+                reply_markup=keyboard,
+                parse_mode=parse_mode
+            )
+            await state.update_data(menu_message_id=old_menu_id)
+            return old_menu_id
+        except Exception:
+            pass
+    # Если плавно нельзя — создаем новое меню и удаляем старое
     menu = await sender.answer(text, reply_markup=keyboard, parse_mode=parse_mode)
     await state.update_data(menu_message_id=menu.message_id)
-    # Удаляем старое меню, кроме фото-результатов
     if old_menu_id and old_menu_id != menu.message_id:
         try:
             await sender.bot.delete_message(chat_id=sender.chat.id, message_id=old_menu_id)
         except Exception:
             pass
-    return menu
+    return menu.message_id
 
 @router.callback_query(F.data == "main_menu")
 async def go_to_main_menu(callback: CallbackQuery, state: FSMContext):
@@ -127,20 +140,23 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     room = data.get('room')
     if user_id not in admins:
         await db.decrease_balance(user_id)
-    loading_menu = await show_single_menu(callback.message, state, "⏳ Генерирую новый дизайн...", None)
+    # Сообщение что идет генерация (плавно)
+    await show_single_menu(callback.message, state, "⏳ Генерирую новый дизайн...", None)
     await callback.answer()
     result_image_url = await generate_image(photo_id, room, style, bot_token)
-    try:
-        await loading_menu.delete()
-    except Exception:
-        pass
+    # 1. Фото с подписью: стиль
     if result_image_url:
-        # НОВОЕ — только результат (фото), menu_message_id не обновляется
         await callback.message.answer_photo(
             photo=result_image_url,
-            caption=f"Ваш новый дизайн в стиле *{style.replace('_', ' ').title()}*!",
+            caption=f"✨ Ваш новый дизайн в стиле *{style.replace('_', ' ').title()}*!",
+            parse_mode="Markdown"
+        )
+        # 2. Отдельное меню (без подписи)
+        menu = await callback.message.answer(
+            "Что дальше?",
             reply_markup=get_post_generation_keyboard()
         )
+        await state.update_data(menu_message_id=menu.message_id)
     else:
         await show_single_menu(callback.message, state, "Ошибка генерации. Попробуйте еще раз.", get_main_menu_keyboard())
 
