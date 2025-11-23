@@ -1,4 +1,4 @@
-# --- ФИНАЛЬНАЯ ВЕРСИЯ: bot/handlers/creation.py ---
+# --- ФИНАЛЬНАЯ ВЕРСИЯ: bot/handlers/creation.py -----
 import asyncio
 import logging
 
@@ -15,7 +15,7 @@ from keyboards.inline import (
     get_style_keyboard,
     get_payment_keyboard,
     get_post_generation_keyboard,
-    get_main_menu_keyboard
+    get_profile_keyboard # <--- Добавлен get_profile_keyboard
 )
 from services.replicate_api import generate_image
 from states.fsm import CreationStates
@@ -65,7 +65,7 @@ async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
 async def show_profile_handler(callback: CallbackQuery, state: FSMContext):
     """
     Кнопка 'Перейти в профиль'.
-    Сгенерированная картинка и ее кнопки ОСТАЮТСЯ. Показ профиля новым сообщением.
+    Сгенерированная картинка и ее кнопки ОСТАЮТСЯ. Показ профиля новым сообщением с новым меню.
     """
     logger.debug("👤 Нажата кнопка 'Профиль'.")
 
@@ -85,7 +85,7 @@ async def show_profile_handler(callback: CallbackQuery, state: FSMContext):
     )
 
     # Отправляем профиль новым сообщением
-    await callback.message.answer(text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.MARKDOWN)
+    await callback.message.answer(text, reply_markup=get_profile_keyboard(), parse_mode=ParseMode.MARKDOWN) # <--- ИСПОЛЬЗУЕМ НОВОЕ МЕНЮ
     await callback.answer()
 
 

@@ -1,4 +1,4 @@
-# --- ИСПРАВЛЕНИЕ: bot/handlers/user_start.py ---
+# --- ИСПРАВЛЕНИЕ: bot/handlers/user_start.py -----
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -7,7 +7,7 @@ from aiogram.exceptions import TelegramBadRequest
 # Импорты наших модулей
 from database.db import db
 from states.fsm import CreationStates
-from keyboards.inline import get_main_menu_keyboard
+from keyboards.inline import get_main_menu_keyboard, get_profile_keyboard # <--- Добавлен get_profile_keyboard
 from utils.texts import START_TEXT, PROFILE_TEXT, UPLOAD_PHOTO_TEXT
 
 router = Router()
@@ -38,6 +38,7 @@ async def show_profile(callback: CallbackQuery):
     """
     Показывает профиль пользователя (баланс, дата регистрации).
     Пытается отредактировать текущее сообщение, чтобы избежать дублирования.
+    Использует get_profile_keyboard.
     """
     user_id = callback.from_user.id
 
@@ -60,18 +61,50 @@ async def show_profile(callback: CallbackQuery):
             # Пытаемся отредактировать сообщение с кнопкой
             await callback.message.edit_text(
                 profile_text,
-                reply_markup=get_main_menu_keyboard()
+                reply_markup=get_profile_keyboard() # <--- ИСПОЛЬЗУЕМ НОВОЕ МЕНЮ
             )
         except TelegramBadRequest:
             # Если не смогли отредактировать (например, из-за медиа-контента), отправляем новое сообщение
             await callback.message.answer(
                 profile_text,
-                reply_markup=get_main_menu_keyboard()
+                reply_markup=get_profile_keyboard() # <--- ИСПОЛЬЗУЕМ НОВОЕ МЕНЮ
             )
     else:
         await callback.answer("Профиль не найден.", show_alert=True)
 
     await callback.answer()
+
+
+@router.callback_query(F.data == "main_menu")
+async def go_to_main_menu(callback: CallbackQuery, state: FSMContext):
+    """
+    Возвращает пользователя в главное меню (Создать дизайн, Профиль) из Профиля.
+    """
+    await state.clear()
+
+    try:
+        # Редактируем текущее сообщение (сообщение профиля) на приветственное
+        await callback.message.edit_text(
+            START_TEXT,
+            reply_markup=get_main_menu_keyboard()
+        )
+    except TelegramBadRequest:
+        # Если не удалось отредактировать, отправляем новое
+        await callback.message.answer(
+            START_TEXT,
+            reply_markup=get_main_menu_keyboard()
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "buy_generations")
+async def buy_generations_handler(callback: CallbackQuery):
+    """
+    Обрабатывает нажатие кнопки 'Купить генерации' в профиле.
+    """
+    # Здесь можно добавить логику для перехода к оплате (get_payment_keyboard)
+    await callback.answer("🛍️ Переход к оплате временно недоступен.", show_alert=True)
 
 
 @router.callback_query(F.data == "create_design")

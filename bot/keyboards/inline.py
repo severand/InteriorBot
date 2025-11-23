@@ -1,6 +1,8 @@
 # --- ИСПРАВЛЕНИЯ ВЕРСИИ: bot/keyboards/inline.py ---
-# [2025-11-22 18:05 CET] Добавлена кнопка "Назад к выбору комнаты" в get_style_keyboard.
-# ---
+# [2025-11-23 11:20 CET] Реализована новая навигация:
+# - Главное меню: Создать дизайн, Профиль.
+# - Меню Профиля: Купить генерации, Меню.
+# ---аа
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
@@ -30,18 +32,33 @@ STYLE_TYPES = {
 }
 
 
-def get_main_menu_keyboard() -> InlineKeyboardMarkup:
-    """Генерирует главное меню - ПО ОДНОЙ КНОПКЕ В РЯД."""
+def get_profile_keyboard() -> InlineKeyboardMarkup:
+    """
+    Клавиатура для отображения в профиле. Содержит "Купить" и "Меню".
+    """
     builder = InlineKeyboardBuilder()
 
     builder.row(
-        InlineKeyboardButton(text="🎨 Создать дизайн", callback_data="create_design")
+        InlineKeyboardButton(text="💰 Купить генерации", callback_data="buy_generations")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🏠 Меню", callback_data="main_menu")
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """
+    Главное меню: "Создать дизайн" и "Профиль" (2 кнопки).
+    """
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="🛠️ Создать дизайн", callback_data="create_design")
     )
     builder.row(
         InlineKeyboardButton(text="👤 Профиль", callback_data="show_profile")
-    )
-    builder.row(
-        InlineKeyboardButton(text="💎 Купить генерации", callback_data="buy_generations")
     )
     builder.adjust(1)  # ОДНА кнопка в ряд
     return builder.as_markup()
@@ -95,7 +112,7 @@ def get_payment_keyboard() -> InlineKeyboardMarkup:
         )
 
     builder.row(
-        InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="show_profile")
+        InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="show_profile") # Остается show_profile, т.к. из профиля сюда
     )
     builder.adjust(1)  # ОДНА кнопка в ряд
     return builder.as_markup()
@@ -112,7 +129,7 @@ def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🔄 Я оплатил! (Проверить)", callback_data="check_payment")
     )
     builder.row(
-        InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="show_profile")
+        InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="show_profile") # Остается show_profile
     )
     builder.adjust(1)  # ОДНА кнопка в ряд
     return builder.as_markup()
