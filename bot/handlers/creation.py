@@ -99,10 +99,13 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
             return
     await state.update_data(photo_id=photo_file_id)
     await state.set_state(CreationStates.choose_room)
-    # 🟢 Надёжная гарантия порядка: ChatAction и пауза
-    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
-    await asyncio.sleep(0.5)
-    await show_single_menu(message, state, PHOTO_SAVED_TEXT, get_room_keyboard())
+    # ГАРАНТИЯ: Отправляем меню как caption к КОПИИ фото
+    await message.answer_photo(
+        photo=photo_file_id,
+        caption=PHOTO_SAVED_TEXT,
+        reply_markup=get_room_keyboard()
+    )
+    # ВНИМАНИЕ: menu_message_id не обновляем — актуальные переходы будут через новое меню стиля и далее
 
 @router.callback_query(CreationStates.choose_room, F.data.startswith("room_"))
 async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[int]):
