@@ -32,7 +32,6 @@ from utils.texts import (
 logger = logging.getLogger(__name__)
 router = Router()
 
-# --- Универсальный паттерн: всегда только одно меню в чате ---
 async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse_mode: str = "Markdown"):
     data = await state.get_data()
     old_menu_id = data.get('menu_message_id')
@@ -50,7 +49,6 @@ async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse
             return old_menu_id
         except Exception:
             pass
-    # Если плавно нельзя — создаем новое меню и удаляем старое
     menu = await sender.answer(text, reply_markup=keyboard, parse_mode=parse_mode)
     await state.update_data(menu_message_id=menu.message_id)
     if old_menu_id and old_menu_id != menu.message_id:
@@ -102,6 +100,8 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
             return
     await state.update_data(photo_id=photo_file_id)
     await state.set_state(CreationStates.choose_room)
+    # Задержка для корректного порядка (фото -> меню)
+    await asyncio.sleep(0.15)
     await show_single_menu(message, state, PHOTO_SAVED_TEXT, get_room_keyboard())
 
 @router.callback_query(CreationStates.choose_room, F.data.startswith("room_"))
@@ -140,18 +140,15 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     room = data.get('room')
     if user_id not in admins:
         await db.decrease_balance(user_id)
-    # Сообщение что идет генерация (плавно)
     await show_single_menu(callback.message, state, "⏳ Генерирую новый дизайн...", None)
     await callback.answer()
     result_image_url = await generate_image(photo_id, room, style, bot_token)
-    # 1. Фото с подписью: стиль
     if result_image_url:
         await callback.message.answer_photo(
             photo=result_image_url,
             caption=f"✨ Ваш новый дизайн в стиле *{style.replace('_', ' ').title()}*!",
             parse_mode="Markdown"
         )
-        # 2. Отдельное меню (без подписи)
         menu = await callback.message.answer(
             "Что дальше?",
             reply_markup=get_post_generation_keyboard()
