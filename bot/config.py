@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- АДМИНИСТРАТОРЫ ---
+# --- АДМИНИСТРАТОРЫ ----
 ADMIN_IDS = [
     7884972750,
     827652042,

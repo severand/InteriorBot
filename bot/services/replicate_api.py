@@ -9,7 +9,7 @@ load_dotenv()
 # Используем фейковый токен для теста, если реальный не указан
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "FAKE_TOKEN_FOR_TEST")
 
-# ID модели Replicate
+# ID модели Replicate-
 MODEL_ID = "jag-design/interior-design:a232f38d17a78361738734e5695029e246944e27f066b1d1fdd2c9f5928d132c"
 
 

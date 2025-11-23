@@ -11,7 +11,6 @@ from aiogram.exceptions import TelegramBadRequest
 
 logger = logging.getLogger(__name__)
 
-
 async def edit_menu(
     callback: CallbackQuery,
     state: FSMContext,

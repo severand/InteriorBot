@@ -1,6 +1,5 @@
 from aiogram.fsm.state import StatesGroup, State
 
-
 # Класс состояний для процесса генерации дизайна
 class CreationStates(StatesGroup):
     # 1. Ждем фотографию комнаты от пользователя
