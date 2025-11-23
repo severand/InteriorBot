@@ -1,3 +1,7 @@
+# --- ИСПРАВЛЕНИЯ ВЕРСИИ: bot/keyboards/inline.py ---
+# [2025-11-22 18:05 CET] Добавлена кнопка "Назад к выбору комнаты" в get_style_keyboard.
+# ---
+
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
 
@@ -27,7 +31,7 @@ STYLE_TYPES = {
 
 
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
-    """Генерирует главное меню."""
+    """Генерирует главное меню - ПО ОДНОЙ КНОПКЕ В РЯД."""
     builder = InlineKeyboardBuilder()
 
     builder.row(
@@ -39,58 +43,66 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="💎 Купить генерации", callback_data="buy_generations")
     )
-    builder.adjust(1)
+    builder.adjust(1)  # ОДНА кнопка в ряд
     return builder.as_markup()
 
 
 def get_room_keyboard() -> InlineKeyboardMarkup:
-    """Генерирует кнопки для выбора типа комнаты."""
+    """Генерирует кнопки для выбора типа комнаты - ПО ОДНОЙ КНОПКЕ В РЯД."""
     builder = InlineKeyboardBuilder()
 
-    # Добавляем кнопки комнат
+    # Добавляем кнопки комнат ПО ОДНОЙ В РЯД
     for key, text in ROOM_TYPES.items():
-        # callback_data будет иметь вид: room_living_room
-        builder.button(text=text, callback_data=f"room_{key}")
+        builder.row(
+            InlineKeyboardButton(text=text, callback_data=f"room_{key}")
+        )
 
     builder.row(
         InlineKeyboardButton(text="⬅️ Загрузить новое фото", callback_data="create_design")
     )
-    builder.adjust(2)  # Две кнопки в ряд
+    builder.adjust(1)  # ОДНА кнопка в ряд
     return builder.as_markup()
 
 
 def get_style_keyboard() -> InlineKeyboardMarkup:
-    """Генерирует кнопки для выбора стиля дизайна."""
+    """Генерирует кнопки для выбора стиля дизайна - ПО ОДНОЙ КНОПКЕ В РЯД."""
     builder = InlineKeyboardBuilder()
 
-    # Добавляем кнопки стилей
+    # Добавляем кнопки стилей ПО ОДНОЙ В РЯД
     for key, text in STYLE_TYPES.items():
-        # callback_data будет иметь вид: style_modern
-        builder.button(text=text, callback_data=f"style_{key}")
+        builder.row(
+            InlineKeyboardButton(text=text, callback_data=f"style_{key}")
+        )
 
-    builder.adjust(2)  # Две кнопки в ряд
+    # --- НОВОЕ: Кнопка Назад ---
+    builder.row(
+        InlineKeyboardButton(text="⬅️ Назад к выбору комнаты", callback_data="back_to_room")
+    )
+
+    builder.adjust(1)  # ОДНА кнопка в ряд
     return builder.as_markup()
 
 
 def get_payment_keyboard() -> InlineKeyboardMarkup:
-    """Генерирует кнопки для выбора пакетов генераций."""
+    """Генерирует кнопки для выбора пакетов генераций - ПО ОДНОЙ КНОПКЕ В РЯД."""
     builder = InlineKeyboardBuilder()
 
-    # Добавляем кнопки пакетов
+    # Добавляем кнопки пакетов ПО ОДНОЙ В РЯД
     for tokens, price in PACKAGES.items():
-        # callback_data будет иметь вид: pay_10_290
         button_text = f"{tokens} генераций - {price} руб."
-        builder.button(text=button_text, callback_data=f"pay_{tokens}_{price}")
+        builder.row(
+            InlineKeyboardButton(text=button_text, callback_data=f"pay_{tokens}_{price}")
+        )
 
     builder.row(
         InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="show_profile")
     )
-    builder.adjust(1)  # Одна кнопка в ряд
+    builder.adjust(1)  # ОДНА кнопка в ряд
     return builder.as_markup()
 
 
 def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
-    """Кнопки для перехода к оплате и проверки статуса."""
+    """Кнопки для перехода к оплате и проверки статуса - ПО ОДНОЙ КНОПКЕ В РЯД."""
     builder = InlineKeyboardBuilder()
 
     builder.row(
@@ -102,16 +114,16 @@ def get_payment_check_keyboard(url: str) -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="show_profile")
     )
-    builder.adjust(1)
+    builder.adjust(1)  # ОДНА кнопка в ряд
     return builder.as_markup()
 
 
 def get_post_generation_keyboard() -> InlineKeyboardMarkup:
-    """Кнопки после успешной генерации с вариантами продолжения."""
+    """Кнопки после успешной генерации с вариантами продолжения - ПО ОДНОЙ КНОПКЕ В РЯД."""
     builder = InlineKeyboardBuilder()
 
     builder.row(
-        InlineKeyboardButton(text="🎨 Показать новый стиль", callback_data="change_style")
+        InlineKeyboardButton(text="🎨 Выбрать новый стиль", callback_data="change_style")
     )
     builder.row(
         InlineKeyboardButton(text="📸 Загрузить другое фото", callback_data="create_design")
@@ -119,5 +131,5 @@ def get_post_generation_keyboard() -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="👤 Перейти в профиль", callback_data="show_profile")
     )
-    builder.adjust(1)
+    builder.adjust(1)  # ОДНА кнопка в ряд
     return builder.as_markup()
