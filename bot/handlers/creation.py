@@ -127,6 +127,7 @@ async def back_to_room_selection(callback: CallbackQuery, state: FSMContext):
     await show_single_menu(callback.message, state, PHOTO_SAVED_TEXT, get_room_keyboard())
     await callback.answer()
 
+
 @router.callback_query(CreationStates.choose_style, F.data.startswith("style_"))
 async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
     style = callback.data.split("_")[-1]
@@ -142,9 +143,17 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     room = data.get('room')
     if user_id not in admins:
         await db.decrease_balance(user_id)
-    await show_single_menu(callback.message, state, "⏳ Генерирую новый дизайн...", None)
+    # Сохраняем ID сообщения о прогрессе
+    progress_msg_id = await show_single_menu(callback.message, state, "⏳ Генерирую новый дизайн...", None)
     await callback.answer()
     result_image_url = await generate_image(photo_id, room, style, bot_token)
+    # Удаляем сообщение о прогрессе после генерации
+    if progress_msg_id:
+        try:
+            await callback.message.bot.delete_message(chat_id=callback.message.chat.id, message_id=progress_msg_id)
+        except Exception as e:
+            logger.debug(f"Не удалось удалить сообщение о прогрессе: {e}")
+
     if result_image_url:
         await callback.message.answer_photo(
             photo=result_image_url,
@@ -157,7 +166,10 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
         )
         await state.update_data(menu_message_id=menu.message_id)
     else:
-        await show_single_menu(callback.message, state, "Ошибка генерации. Попробуйте еще раз.", get_main_menu_keyboard())
+        await show_single_menu(callback.message, state, "Ошибка генерации. Попробуйте еще раз.",
+                               get_main_menu_keyboard())
+
+
 
 @router.callback_query(F.data == "change_style")
 async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
