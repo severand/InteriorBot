@@ -1,5 +1,7 @@
 import os
 import logging
+import requests
+import aiohttp
 from aiogram import Bot
 from config import config
 
@@ -8,7 +10,10 @@ logger = logging.getLogger(__name__)
 # ID модели Replicate для генерации интерьеров
 MODEL_ID = "adirik/interior-design:76604baddc85b1b4616e1c6475eca080da339c8875bd4996705440484a6879c2"
 
-# Маппинг стилей на промпты (обновлено с новыми стилями)
+# URL Colab API (потом заменишь на реальный)
+COLAB_API_URL = os.getenv("COLAB_API_URL", "http://localhost:5000")
+
+# Маппинг стилей на промпты
 STYLE_PROMPTS = {
     'modern': 'modern contemporary interior design, clean lines, neutral colors, sleek furniture, minimalist aesthetic',
     'minimalist': 'minimalist interior design, simple forms, functional space, clean aesthetic, uncluttered, neutral palette',
@@ -37,49 +42,59 @@ def get_prompt(style: str, room: str) -> str:
     """Генерирует промпт на основе стиля и комнаты."""
     style_desc = STYLE_PROMPTS.get(style, 'modern interior design')
     room_name = ROOM_PROMPTS.get(room, room.replace('_', ' '))
-
     prompt = f"A beautiful {room_name}, {style_desc}, photorealistic, 8k, high quality, professional photography"
     return prompt
 
 
-async def generate_image(photo_file_id: str, room: str, style: str, bot_token: str) -> str | None:
+async def generate_image_via_colab(prompt: str) -> str | None:
     """
-    Вызывает API Replicate для генерации изображения интерьера.
+    Генерирует изображение через Colab API.
 
     Args:
-        photo_file_id: ID фото из Telegram
-        room: Тип комнаты (living_room, bedroom, kitchen и т.д.)
-        style: Стиль дизайна (modern, minimalist, scandinavian и т.д.)
-        bot_token: Токен бота для загрузки фото
+        prompt: Текстовый промпт для генерации
 
     Returns:
-        URL сгенерированного изображения или None при ошибке
+        URL сгенерированного изображения или None
+    """
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                    f"{COLAB_API_URL}/generate",
+                    json={"prompt": prompt},
+                    timeout=aiohttp.ClientTimeout(total=300)  # 5 минут таймаут
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get('image_url')
+                else:
+                    logger.error(f"Colab API error: {resp.status}")
+                    return None
+    except Exception as e:
+        logger.error(f"Ошибка при генерации через Colab: {e}")
+        return None
+
+
+async def generate_image_via_replicate(photo_file_id: str, room: str, style: str, bot_token: str) -> str | None:
+    """
+    Генерирует изображение через Replicate API (старый способ).
+    Используется если Colab недоступен.
     """
 
-    # Проверяем наличие API токена
     if not config.REPLICATE_API_TOKEN or config.REPLICATE_API_TOKEN == "FAKE_TOKEN_FOR_TEST":
-        logger.warning("REPLICATE_API_TOKEN не установлен, используется заглушка")
-        return "https://i.imgur.com/K1x5d1H.png"
+        logger.warning("REPLICATE_API_TOKEN не установлен")
+        return None
 
     try:
-        # Импортируем replicate только если токен есть
         import replicate
-
-        # Устанавливаем токен для клиента
         os.environ["REPLICATE_API_TOKEN"] = config.REPLICATE_API_TOKEN
 
-        # Генерируем промпт
         prompt = get_prompt(style, room)
-        logger.info(f"Генерация изображения с промптом: {prompt}")
+        logger.info(f"Генерация через Replicate: {prompt}")
 
-        # Получаем URL файла из Telegram
         bot = Bot(token=bot_token)
         file_info = await bot.get_file(photo_file_id)
         file_url = f"https://api.telegram.org/file/bot{bot_token}/{file_info.file_path}"
-        logger.info(f"URL исходного изображения: {file_url}")
 
-        # Вызываем Replicate API
-        logger.info("Отправка запроса в Replicate API...")
         output = replicate.run(
             MODEL_ID,
             input={
@@ -91,26 +106,42 @@ async def generate_image(photo_file_id: str, room: str, style: str, bot_token: s
             }
         )
 
-        # Обрабатываем результат
         if output:
-            # output может быть строкой (URL) или списком URL
             if isinstance(output, str):
-                logger.info(f"Генерация успешна: {output}")
                 return output
             elif isinstance(output, list) and len(output) > 0:
-                result_url = output[0]
-                logger.info(f"Генерация успешна: {result_url}")
-                return result_url
-            else:
-                logger.error(f"Неожиданный формат ответа: {output}")
-                return None
+                return output[0]
 
-        logger.error("API вернул пустой результат")
-        return None
-
-    except ImportError:
-        logger.error("Библиотека replicate не установлена. Выполните: pip install replicate")
-        return None
     except Exception as e:
-        logger.error(f"Ошибка при генерации через Replicate API: {e}", exc_info=True)
-        return None
+        logger.error(f"Ошибка при генерации через Replicate: {e}")
+
+    return None
+
+
+async def generate_image(photo_file_id: str, room: str, style: str, bot_token: str) -> str | None:
+    """
+    Главная функция генерации. Пробует:
+    1. Colab API (основной способ)
+    2. Replicate API (резервный способ)
+    """
+
+    prompt = get_prompt(style, room)
+
+    # Сначала пробуем Colab
+    logger.info(f"Попытка 1: Генерация через Colab API...")
+    result = await generate_image_via_colab(prompt)
+
+    if result:
+        logger.info(f"✅ Генерация через Colab успешна")
+        return result
+
+    # Если Colab не сработал, пробуем Replicate
+    logger.info(f"Попытка 2: Генерация через Replicate API...")
+    result = await generate_image_via_replicate(photo_file_id, room, style, bot_token)
+
+    if result:
+        logger.info(f"✅ Генерация через Replicate успешна")
+        return result
+
+    logger.error("❌ Обе попытки генерации не удались")
+    return None

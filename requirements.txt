@@ -1,3 +1,5 @@
+#requirements
+
 aiogram
 python-dotenv
 aiosqlite
