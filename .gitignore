@@ -1,4 +1,28 @@
+# Уже есть (оставляем как есть)
 *.db
 .env
 __pycache__/
 venv/
+
+# ДОБАВЬТЕ ЭТО (скопируйте и вставьте):
+
+# Virtual Environment folders
+Lib/
+Scripts/
+Include/
+pyvenv.cfg
+
+# PyCharm settings
+.idea/
+
+# Python compiled files
+*.pyc
+*.pyo
+*.py[cod]
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
