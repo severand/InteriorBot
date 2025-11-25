@@ -1,9 +1,8 @@
-#
+# payment
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from dotenv import load_dotenv
 from database.db import db
 from keyboards.inline import get_payment_check_keyboard, get_payment_keyboard, get_main_menu_keyboard
 from utils.texts import PAYMENT_CREATED, PAYMENT_SUCCESS_TEXT, PAYMENT_ERROR_TEXT, MAIN_MENU_TEXT
