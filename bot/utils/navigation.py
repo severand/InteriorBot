@@ -79,7 +79,7 @@ async def edit_menu(
         return False
 
 
-async def show_main_menu(callback: CallbackQuery, state: FSMContext):
+async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
     Показать главное меню.
     Очищает все состояния FSM и возвращает в начальный экран.
@@ -103,7 +103,7 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext):
         callback=callback,
         state=state,
         text=START_TEXT,
-        keyboard=get_main_menu_keyboard()
+        keyboard=get_main_menu_keyboard(is_admin=callback.from_user.id in admins)
     )
 
 
