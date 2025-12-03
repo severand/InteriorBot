@@ -1,5 +1,6 @@
 # --- ИСПРАВЛЕНИЯ ВЕРСИИ: bot/main.py ---
 # [2025-11-22 11:35 CET] Исправление: Уровень логирования изменен на DEBUG для детальной отладки срабатывания хэндлеров.
+# [2025-12-03] Добавлен роутер referral для реферальной системы
 # ----
 
 import asyncio
@@ -12,7 +13,7 @@ from config import ADMIN_IDS
 # Импорты конфигурации (на уровне проекта)
 from config import config
 from database.db import Database
-from handlers import user_start, creation, payment
+from handlers import user_start, creation, payment, referral
 
 # Configure logging
 logging.basicConfig(
@@ -33,31 +34,32 @@ bot = Bot(
 
 
 async def main():
-    """Main bot function"""
+    """Основная функция бота"""
     # Initialize database
     await db.init_db()
-    logger.info("Database initialized")
+    logger.info("База данных инициализирована")
 
     # Initialize dispatcher
     dp = Dispatcher()
 
-    # Register routers
+    # Register routers (Регистрируем роутеры)
     dp.include_routers(
         user_start.router,
         creation.router,
         payment.router,
+        referral.router,  # НОВЫЙ роутер для реферальной системы
     )
 
     # Передаем ADMIN_IDS и BOT_TOKEN в контекст для использования в хэндлерах
     dp["admins"] = ADMIN_IDS
     dp["bot_token"] = config.BOT_TOKEN
 
-    logger.info("Bot started")
+    logger.info("Бот запущен")
 
     try:
         # Get bot info
         me = await bot.get_me()
-        logger.info(f"Run polling for bot @{me.username} id={me.id} - '{me.username}'")
+        logger.info(f"Run polling for bot @{me.username} id={me.id} - '{me.first_name}'")
 
         # Start polling
         await dp.start_polling(bot)
@@ -69,4 +71,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+        logger.info("Бот остановлен пользователем")
