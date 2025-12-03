@@ -1,6 +1,6 @@
 # bot/database/db.py
-# --- ОБНОВЛЕН: 2025-12-03 20:10 ---
-# Добавлены методы search_user, get_all_users_paginated, get_revenue_by_period, и другие
+# --- ОБНОВЛЕН: 2025-12-03 20:22 ---
+# Добавлены методы get_user_payments_stats и get_user_generations_count
 
 import aiosqlite
 import logging
@@ -120,7 +120,7 @@ class Database:
             logger.error(f"Ошибка обработки реферала: {e}")
 
     async def get_user_data(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Получить данные пользователя"""
+        """Получить данные пользователb"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(GET_USER, (user_id,)) as cursor:
@@ -511,6 +511,38 @@ class Database:
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
+
+    async def get_user_payments_stats(self, user_id: int) -> Dict[str, int]:
+        """
+        Получить статистику платежей пользователb.
+        Возвращает: {
+            'count': количество платежей,
+            'total_amount': общая сумма
+        }
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                """
+                SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total
+                FROM payments
+                WHERE user_id = ? AND status = 'succeeded'
+                """,
+                (user_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return {
+                    'count': row[0] if row else 0,
+                    'total_amount': row[1] if row else 0
+                }
+
+    async def get_user_generations_count(self, user_id: int) -> int:
+        """
+        Получить количество выполненных генераций.
+        Пока заглушка - таблица generations не реализована.
+        В будущем: SELECT COUNT(*) FROM generations WHERE user_id = ?
+        """
+        # Заглушка
+        return 0
 
 
 # Создаем глобальный экземпляр
