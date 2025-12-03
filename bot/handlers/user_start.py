@@ -5,6 +5,7 @@
 # - Использование edit_menu для всех переходов
 # - Добавлен хэндлер main_menu для возврата
 # [2025-12-03] Добавлена обработка реферальных ссылок и обновлен профиль
+# [2025-12-03 19:46] Добавлено отображение баланса в cmd_start
 # ---
 
 from aiogram import Router, F
@@ -18,6 +19,7 @@ from states.fsm import CreationStates
 from keyboards.inline import get_main_menu_keyboard, get_profile_keyboard
 from utils.texts import START_TEXT, UPLOAD_PHOTO_TEXT
 from utils.navigation import edit_menu, show_main_menu
+from utils.helpers import add_balance_to_text  # НОВЫЙ ИМПОРТ для отображения баланса
 
 router = Router()
 
@@ -45,9 +47,12 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     # Создаем пользователя в базе (если его нет) с реферальным кодом
     await db.create_user(user_id, username, referrer_code)
 
+    # Добавляем баланс к тексту приветствия
+    text = await add_balance_to_text(START_TEXT, user_id)
+
     # Отправляем главное меню и СОХРАНЯЕМ его ID
     menu_msg = await message.answer(
-        START_TEXT,
+        text,
         reply_markup=get_main_menu_keyboard(is_admin=user_id in admins),
         parse_mode="Markdown"
     )
