@@ -1,4 +1,6 @@
 # bot/utils/navigation.py
+# --- ОБНОВЛЕН: 2025-12-03 19:50 (АКТУАЛЬНАЯ ВЕРСИЯ ИЗ PYCHARM) ---
+# Добавлено отображение баланса в функции edit_menu и show_main_menu
 """
 Утилиты для навигации с единым меню.
 Все переходы между экранами происходят через редактирование одного сообщения.
@@ -9,6 +11,8 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
 
+from utils.helpers import add_balance_to_text  # НОВЫЙ ИМПОРТ для отображения баланса
+
 logger = logging.getLogger(__name__)
 
 async def edit_menu(
@@ -16,11 +20,13 @@ async def edit_menu(
     state: FSMContext,
     text: str,
     keyboard: InlineKeyboardMarkup = None,
-    parse_mode: str = "Markdown"
+    parse_mode: str = "Markdown",
+    show_balance: bool = True  # НОВЫЙ ПАРАМЕТР
 ) -> bool:
     """
     Универсальная функция редактирования единого меню.
     Всегда редактирует ОДНО сообщение - никаких новых сообщений.
+    АВТОМАТИЧЕСКИ ДОБАВЛЯЕТ БАЛАНС к тексту.
     
     Args:
         callback: CallbackQuery объект
@@ -28,10 +34,16 @@ async def edit_menu(
         text: Новый текст сообщения
         keyboard: Новая клавиатура (может быть None)
         parse_mode: Режим парсинга (по умолчанию Markdown)
+        show_balance: Показывать ли баланс (по умолчанию True)
     
     Returns:
         bool: True если успешно отредактировано, False если создано новое
     """
+    # Добавляем баланс к тексту если нужно
+    if show_balance:
+        user_id = callback.from_user.id
+        text = await add_balance_to_text(text, user_id)
+    
     data = await state.get_data()
     menu_message_id = data.get('menu_message_id')
     
@@ -83,6 +95,7 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: lis
     """
     Показать главное меню.
     Очищает все состояния FSM и возвращает в начальный экран.
+    АВТОМАТИЧЕСКИ ДОБАВЛЯЕТ БАЛАНС к тексту.
     """
     from keyboards.inline import get_main_menu_keyboard
     from utils.texts import START_TEXT
@@ -99,11 +112,16 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: lis
     
     logger.debug(f"🏠 Returning to main menu for user {callback.from_user.id}")
     
+    # Добавляем баланс к стартовому тексту
+    user_id = callback.from_user.id
+    text = await add_balance_to_text(START_TEXT, user_id)
+    
     await edit_menu(
         callback=callback,
         state=state,
-        text=START_TEXT,
-        keyboard=get_main_menu_keyboard(is_admin=callback.from_user.id in admins)
+        text=text,
+        keyboard=get_main_menu_keyboard(is_admin=callback.from_user.id in admins),
+        show_balance=False  # Уже добавили выше вручную
     )
 
 
