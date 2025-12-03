@@ -1,6 +1,6 @@
 # bot/database/db.py
-# --- ОБНОВЛЕН: 2025-12-03 20:22 ---
-# Добавлены методы get_user_payments_stats и get_user_generations_count
+# --- ОБНОВЛЕН: 2025-12-03 20:34 ---
+# Добавлены методы get_user_recent_payments и get_referrer_info для расширенного поиска
 
 import aiosqlite
 import logging
@@ -120,7 +120,7 @@ class Database:
             logger.error(f"Ошибка обработки реферала: {e}")
 
     async def get_user_data(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Получить данные пользователb"""
+        """Получить данные пользователя"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(GET_USER, (user_id,)) as cursor:
@@ -514,7 +514,7 @@ class Database:
 
     async def get_user_payments_stats(self, user_id: int) -> Dict[str, int]:
         """
-        Получить статистику платежей пользователb.
+        Получить статистику платежей пользователя.
         Возвращает: {
             'count': количество платежей,
             'total_amount': общая сумма
@@ -535,15 +535,72 @@ class Database:
                     'total_amount': row[1] if row else 0
                 }
 
+    async def get_user_recent_payments(self, user_id: int, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Получить последние плbатежи пользователя.
+        Возвращает [
+            {
+                'amount': сумма,
+                'tokens': колb-во токенов,
+                'payment_date': дата,
+                'status': статус
+            }
+        ]
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT amount, tokens, payment_date, status
+                FROM payments
+                WHERE user_id = ? AND status = 'succeeded'
+                ORDER BY payment_date DESC
+                LIMIT ?
+                """,
+                (user_id, limit)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    async def get_referrer_info(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Получить информацию о рефере (кто приглbасил).
+        Возвращает: {
+            'referrer_id': ID рефера,
+            'referrer_username': username рефера
+        }
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            # Получаем referred_by пользователbя
+            async with db.execute("SELECT referred_by FROM users WHERE user_id = ?", (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                if not row or not row['referred_by']:
+                    return None
+                
+                referrer_id = row['referred_by']
+            
+            # Полbучаем данные рефера
+            async with db.execute(GET_USER, (referrer_id,)) as cursor:
+                referrer_row = await cursor.fetchone()
+                if referrer_row:
+                    return {
+                        'referrer_id': referrer_row['user_id'],
+                        'referrer_username': referrer_row['username']
+                    }
+            
+            return None
+
     async def get_user_generations_count(self, user_id: int) -> int:
         """
         Получить количество выполненных генераций.
-        Пока заглушка - таблица generations не реализована.
+        Пока заглушка - таблbица generations не реалbизована.
         В будущем: SELECT COUNT(*) FROM generations WHERE user_id = ?
         """
-        # Заглушка
+        # Заглbушка
         return 0
 
 
-# Создаем глобальный экземпляр
+# Создаем глbобалbьный экземплbяр
 db = Database()
