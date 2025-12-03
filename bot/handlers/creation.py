@@ -1,4 +1,6 @@
 # creation
+# --- Обновлен: 2025-12-03 19:35 ---
+# Добавлено отображение баланса в функции show_single_menu
 
 import asyncio
 import logging
@@ -30,11 +32,20 @@ from utils.texts import (
     PROFILE_TEXT,
     MAIN_MENU_TEXT
 )
+from utils.helpers import add_balance_to_text  # НОВЫЙ ИМПОРТ
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse_mode: str = "Markdown"):
+async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse_mode: str = "Markdown", show_balance: bool = True):
+    """
+    Отображает единое меню с автоматическим добавлением баланса.
+    """
+    # Добавляем баланс к тексту
+    if show_balance and hasattr(sender, 'from_user'):
+        user_id = sender.from_user.id
+        text = await add_balance_to_text(text, user_id)
+    
     data = await state.get_data()
     old_menu_id = data.get('menu_message_id')
     if old_menu_id:
@@ -99,16 +110,13 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
             return
     await state.update_data(photo_id=photo_file_id)
     await state.set_state(CreationStates.choose_room)
-    menu_msg = await message.answer(
-        PHOTO_SAVED_TEXT,
-        reply_markup=get_room_keyboard()
-    )
-    await state.update_data(menu_message_id=menu_msg.message_id)
+    # Используем show_single_menu для автоматического добавления баланса
+    await show_single_menu(message, state, PHOTO_SAVED_TEXT, get_room_keyboard())
 
 # ===== ВЫБОР КОМНАТЫ =====
 @router.callback_query(CreationStates.choose_room, F.data.startswith("room_"))
 async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[int]):
-    room = callback.data.split("_")[-1]
+    room = callback.data.replace("room_", "", 1)
     user_id = callback.from_user.id
     if user_id not in admins:
         balance = await db.get_balance(user_id)
@@ -144,8 +152,8 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     room = data.get('room')
     if user_id not in admins:
         await db.decrease_balance(user_id)
-    # Сохраняем ID сообщения о прогрессе
-    progress_msg_id = await show_single_menu(callback.message, state, "⏳ Генерирую новый дизайн...", None)
+    # Сохраняем ID сообщения о прогрессе (без баланса)
+    progress_msg_id = await show_single_menu(callback.message, state, "⏳ Генерирую новый дизайн...", None, show_balance=False)
     await callback.answer()
     result_image_url = await generate_image(photo_id, room, style, bot_token)
     # Удаляем сообщение о прогрессе после генерации
@@ -161,15 +169,19 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
             caption=f"✨ Ваш новый дизайн в стиле *{style.replace('_', ' ').title()}*!",
             parse_mode="Markdown"
         )
-        menu = await callback.message.answer(
-            "Что дальше?",
-            reply_markup=get_post_generation_keyboard()
+        # Используем show_single_menu для следующего меню с балансом
+        await show_single_menu(
+            callback.message, 
+            state, 
+            "Что дальше? "
+            "1. Вы можете сделать повторный дизайн этого же стиля. "
+            "Каждый раз создается новый дизайн помещения!  "
+            "2. Вы можете другой стиль дизайна этого помещения.",
+            get_post_generation_keyboard()
         )
-        await state.update_data(menu_message_id=menu.message_id)
     else:
         await show_single_menu(callback.message, state, "Ошибка генерации. Попробуйте еще раз.",
                                get_main_menu_keyboard())
-
 
 
 @router.callback_query(F.data == "change_style")
@@ -178,19 +190,8 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
     await show_single_menu(callback.message, state, CHOOSE_STYLE_TEXT, get_style_keyboard())
     await callback.answer()
 
-@router.callback_query(F.data == "show_profile")
-async def show_profile_handler(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    balance = await db.get_balance(user_id)
-    username = callback.from_user.username or "Не указано"
-    text = PROFILE_TEXT.format(
-        user_id=user_id,
-        username=username,
-        balance=balance,
-        reg_date="Недавно"
-    )
-    await show_single_menu(callback.message, state, text, get_profile_keyboard())
-    await callback.answer()
+# ===== ДУБЛИКАТ УДАЛЁН =====
+# Хэндлер show_profile теперь только в handlers/user_start.py
 
 @router.message(CreationStates.waiting_for_photo)
 async def invalid_photo(message: Message):
