@@ -1,6 +1,6 @@
 # bot/handlers/admin.py
-# --- ОБНОВЛЕН: 2025-12-03 20:15 ---
-# Добавлен полноценный поиск пользователей с FSM-состояниями
+# --- ОБНОВЛЕН: 2025-12-03 20:22 ---
+# Добавлена статистика платежей и генераций в вывод поиска
 
 import logging
 from aiogram import Router, F
@@ -275,7 +275,7 @@ async def process_search_query(message: Message, state: FSMContext, admins: list
     # Очищаем состояние
     await state.clear()
 
-    # Формируем красивый вывод
+    # Получаем данные пользователя
     found_user_id = user_data['user_id']
     username = user_data['username'] or "Не указан"
     balance = user_data['balance']
@@ -284,6 +284,14 @@ async def process_search_query(message: Message, state: FSMContext, admins: list
     referred_by = user_data['referred_by'] or "Нет"
     referrals_count = user_data['referrals_count']
     reg_date = user_data['reg_date']
+
+    # Получаем статистику платежей
+    payments_stats = await db.get_user_payments_stats(found_user_id)
+    payments_count = payments_stats['count']
+    total_paid = payments_stats['total_amount']
+
+    # Получаем количество генераций
+    generations_count = await db.get_user_generations_count(found_user_id)
 
     # Экранируем username
     username_clean = username.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace(
@@ -299,6 +307,10 @@ async def process_search_query(message: Message, state: FSMContext, admins: list
         f"👥 **Привлечено рефералов:** {referrals_count}\n"
         f"🔽 **Пригласил:** {referred_by}\n"
         f"📅 **Дата регистрации:** {reg_date}\n\n"
+        "📊 **Статистика:**\n"
+        f"• Количество оплbат: **{payments_count}**\n"
+        f"• Всего оплачено: **{total_paid} руб.**\n"
+        f"• Выполнено генераций: **{generations_count}**\n\n"
         "⚙️ **Доступные действия:**\n"
         f"• `/add_tokens {found_user_id} <кол-во>` - добавить токены\n"
         f"• `/balance {found_user_id}` - проверить баланс"
@@ -361,7 +373,7 @@ async def show_payments_history(callback: CallbackQuery, admins: list[int]):
 @router.message(Command("add_tokens"))
 async def cmd_add_tokens(message: Message, admins: list[int]):
     """
-    Добавить токены пользователю
+    Добавить токены пользователbю
     Использование: /add_tokens <user_id> <количество>
     Пример: /add_tokens 123456789 10
     """
@@ -386,7 +398,7 @@ async def cmd_add_tokens(message: Message, admins: list[int]):
         tokens_to_add = int(args[2])
 
         if tokens_to_add <= 0:
-            await message.answer("❌ Количество токенов должно быть больше 0!")
+            await message.answer("❌ Количество токенов долbжно быть больше 0!")
             return
 
         await db.add_tokens(target_user_id, tokens_to_add)
@@ -394,7 +406,7 @@ async def cmd_add_tokens(message: Message, admins: list[int]):
 
         await message.answer(
             f"✅ **Успешно!**\n\n"
-            f"👤 Пользователь: `{target_user_id}`\n"
+            f"👤 Пользователb: `{target_user_id}`\n"
             f"➕ Добавлено токенов: **{tokens_to_add}**\n"
             f"💰 Новый баланс: **{new_balance}**",
             parse_mode="Markdown"
@@ -431,7 +443,7 @@ async def cmd_check_balance(message: Message, admins: list[int]):
         if len(args) != 2:
             await message.answer(
                 "❌ Неверный формат команды!\n\n"
-                "Использование: `/balance <user_id>`\n"
+                "Исполbьзование: `/balance <user_id>`\n"
                 "Пример: `/balance 123456789`",
                 parse_mode="Markdown"
             )
@@ -461,8 +473,8 @@ async def cmd_check_balance(message: Message, admins: list[int]):
 @router.message(Command("users"))
 async def cmd_list_users(message: Message, admins: list[int]):
     """
-    Показать список последних 10 пользователей
-    Использование: /users
+    Показать список послbедних 10 пользователей
+    Исполbьзование: /users
     """
     user_id = message.from_user.id
 
@@ -494,4 +506,4 @@ async def cmd_list_users(message: Message, admins: list[int]):
 
     except Exception as e:
         logger.error(f"Error in list_users: {e}")
-        await message.answer(f"❌ Произошла ошибка: {e}")
+        await message.answer(f"❌ Произошлbа ошибка: {e}")
