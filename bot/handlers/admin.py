@@ -1,12 +1,13 @@
 # bot/handlers/admin.py
-# --- ОБНОВЛЕН: 2025-12-03 20:22 ---
-# Добавлена статистика платежей и генераций в вывод поиска
+# --- ОБНОВЛЕН: 2025-12-03 20:41 ---
+# Добавлены даты платежей, ссылка на Telegram, информация о рефере в поиске
 
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from datetime import datetime
 
 from database.db import db
 from states.fsm import AdminStates
@@ -281,7 +282,6 @@ async def process_search_query(message: Message, state: FSMContext, admins: list
     balance = user_data['balance']
     referral_balance = user_data['referral_balance']
     referral_code = user_data['referral_code']
-    referred_by = user_data['referred_by'] or "Нет"
     referrals_count = user_data['referrals_count']
     reg_date = user_data['reg_date']
 
@@ -293,24 +293,54 @@ async def process_search_query(message: Message, state: FSMContext, admins: list
     # Получаем количество генераций
     generations_count = await db.get_user_generations_count(found_user_id)
 
-    # Экранируем username
-    username_clean = username.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace(
-        '`', '\\`')
+    # Получаем последние платежи
+    recent_payments = await db.get_user_recent_payments(found_user_id, limit=5)
+
+    # Получаем информацию о рефере
+    referrer_info = await db.get_referrer_info(found_user_id)
+
+    # Формируем ссылку на Telegram
+    tg_link = f"[{username}](tg://user?id={found_user_id})"
+
+    # Формируем информацию о рефере
+    if referrer_info:
+        referrer_id = referrer_info['referrer_id']
+        referrer_username = referrer_info['referrer_username'] or "Не указан"
+        referrer_text = f"[{referrer_username}](tg://user?id={referrer_id}) (ID: `{referrer_id}`)"
+    else:
+        referrer_text = "Нет"
+
+    # Формируем список последних платежей
+    if recent_payments:
+        payments_text = ""
+        for payment in recent_payments:
+            # Парсим дату
+            try:
+                payment_date = datetime.fromisoformat(payment['payment_date'])
+                date_str = payment_date.strftime("%d.%m.%Y %H:%M")
+            except:
+                date_str = payment['payment_date']
+            
+            payments_text += f"  • {payment['amount']} руб. ({payment['tokens']} ток.) - {date_str}\n"
+    else:
+        payments_text = "  • Платежей нет\n"
 
     result_text = (
         "✅ **ПОЛЬЗОВАТЕЛЬ НАЙДЕН!**\n\n"
         f"🆔 **ID:** `{found_user_id}`\n"
-        f"👤 **Username:** {username_clean}\n"
+        f"👤 **Username:** {tg_link}\n"
         f"💰 **Баланс генераций:** {balance}\n"
         f"💸 **Реферальный баланс:** {referral_balance} руб.\n"
         f"🔗 **Реферальный код:** `{referral_code}`\n"
         f"👥 **Привлечено рефералов:** {referrals_count}\n"
-        f"🔽 **Пригласил:** {referred_by}\n"
+        f"🔽 **Пригласил:** {referrer_text}\n"
         f"📅 **Дата регистрации:** {reg_date}\n\n"
         "📊 **Статистика:**\n"
         f"• Количество оплbат: **{payments_count}**\n"
         f"• Всего оплачено: **{total_paid} руб.**\n"
         f"• Выполнено генераций: **{generations_count}**\n\n"
+        "💳 **Последние платежи:**\n"
+        f"{payments_text}\n"
         "⚙️ **Доступные действия:**\n"
         f"• `/add_tokens {found_user_id} <кол-во>` - добавить токены\n"
         f"• `/balance {found_user_id}` - проверить баланс"
