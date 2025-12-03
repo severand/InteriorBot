@@ -1,3 +1,7 @@
+# bot/states/fsm.py
+# --- ОБНОВЛЕН: 2025-12-03 20:08 ---
+# Добавлено состояние waiting_for_search для поиска пользователей в админ-панели
+
 from aiogram.fsm.state import StatesGroup, State
 
 # Класс состояний для процесса генерации дизайна
@@ -16,6 +20,7 @@ class CreationStates(StatesGroup):
 class AdminStates(StatesGroup):
     """Состояния админ-панели"""
     waiting_for_user_id = State()
+    waiting_for_search = State()  # НОВОЕ: ожидание поискового запроса
     adding_balance = State()
     removing_balance = State()
     setting_balance = State()
