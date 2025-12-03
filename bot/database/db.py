@@ -1,4 +1,6 @@
 # bot/database/db.py
+# --- ОБНОВЛЕН: 2025-12-03 20:10 ---
+# Добавлены методы search_user, get_all_users_paginated, get_revenue_by_period, и другие
 
 import aiosqlite
 import logging
@@ -398,6 +400,113 @@ class Database:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM users ORDER BY reg_date DESC LIMIT ?",
+                (limit,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    # ===== НОВЫЕ МЕТОДЫ ДЛЯ АДМИН-ПАНЕЛИ =====
+
+    async def search_user(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Поиск пользователя по ID, username или реферальному коду.
+        Возвращает полную информацию о пользователе.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            # Пробуем поиск по ID (если запрос - цифры)
+            if query.isdigit():
+                user_id = int(query)
+                async with db.execute(GET_USER, (user_id,)) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return dict(row)
+            
+            # Поиск по username (убираем @ если есть)
+            username_query = query.replace('@', '')
+            async with db.execute(
+                "SELECT * FROM users WHERE username = ? OR username = ?",
+                (username_query, f"@{username_query}")
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return dict(row)
+            
+            # Поиск по реферальному коду
+            async with db.execute(GET_USER_BY_REFERRAL_CODE, (query,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return dict(row)
+            
+            return None
+
+    async def get_all_users_paginated(self, page: int = 1, per_page: int = 10) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        Получить всех пользователей с пагинацией.
+        Возвращает ([пользователи], всего_страниц)
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            # Подсчитываем общее количество
+            async with db.execute("SELECT COUNT(*) FROM users") as cursor:
+                total = (await cursor.fetchone())[0]
+            
+            total_pages = (total + per_page - 1) // per_page
+            offset = (page - 1) * per_page
+            
+            # Получаем пользователей для страницы
+            async with db.execute(
+                "SELECT * FROM users ORDER BY reg_date DESC LIMIT ? OFFSET ?",
+                (per_page, offset)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                users = [dict(row) for row in rows]
+            
+            return users, total_pages
+
+    async def get_revenue_by_period(self, days: int = 1) -> int:
+        """Выручка за период"""
+        date_threshold = datetime.now() - timedelta(days=days)
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT SUM(amount) FROM payments WHERE status = 'succeeded' AND payment_date >= ?",
+                (date_threshold.isoformat(),)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row and row[0] else 0
+
+    async def get_successful_payments_count(self) -> int:
+        """Количество успешных платежей"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT COUNT(*) FROM payments WHERE status = 'succeeded'"
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
+    async def get_average_payment(self) -> int:
+        """Средний чек"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT AVG(amount) FROM payments WHERE status = 'succeeded'"
+            ) as cursor:
+                row = await cursor.fetchone()
+                return int(row[0]) if row and row[0] else 0
+
+    async def get_all_payments(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Получить все платежи"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT p.*, u.username 
+                FROM payments p
+                LEFT JOIN users u ON p.user_id = u.user_id
+                ORDER BY p.payment_date DESC
+                LIMIT ?
+                """,
                 (limit,)
             ) as cursor:
                 rows = await cursor.fetchall()
