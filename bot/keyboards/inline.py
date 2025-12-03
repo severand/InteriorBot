@@ -10,7 +10,7 @@ PACKAGES = {
 
 # --- Настройки комнат ---
 ROOM_TYPES = {
-    "living_room": "Гостиная 🛋️",
+    "living_room": "Гостиная 🛍️",
     "bedroom": "Спальня 🛌",
     "kitchen": "Кухня 🍽️",
     "office": "Офис 🖥️",
@@ -30,16 +30,26 @@ STYLE_TYPES = [
     ("artdeco", "Ар‑деко"),
 ]
 
-def get_main_menu_keyboard() -> InlineKeyboardMarkup:
+def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
+    """Главное меню с кнопкой админ-панели для админов"""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🎨 Создать дизайн", callback_data="create_design"))
     builder.row(InlineKeyboardButton(text="👤 Профиль", callback_data="show_profile"))
+    if is_admin:
+        builder.row(InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel"))
     builder.adjust(1)
     return builder.as_markup()
 
 def get_profile_keyboard() -> InlineKeyboardMarkup:
+    """Профиль с реферальными кнопками"""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="💰 Купить генерации", callback_data="buy_generations"))
+    builder.row(InlineKeyboardButton(text="💳 Купить генерации", callback_data="buy_generations"))
+    builder.row(
+        InlineKeyboardButton(text="💸 Вывести деньги", callback_data="referral_request_payout"),
+        InlineKeyboardButton(text="💎 Обменять на генерации", callback_data="referral_exchange_tokens")
+    )
+    builder.row(InlineKeyboardButton(text="⚙️ Реквизиты для выплат", callback_data="referral_setup_payment"))
+    builder.row(InlineKeyboardButton(text="📊 История операций", callback_data="referral_history"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     builder.adjust(1)
     return builder.as_markup()
@@ -62,7 +72,7 @@ def get_style_keyboard() -> InlineKeyboardMarkup:
             for style_key, style_name in row
         ]
         builder.row(*buttons)
-    # Кнопка “К выбору комнаты” и “Главное меню” — отдельно
+    # Кнопка "К выбору комнаты" и "Главное меню" — отдельно
     builder.row(InlineKeyboardButton(text="⬅️ К выбору комнаты", callback_data="back_to_room"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     return builder.as_markup()
