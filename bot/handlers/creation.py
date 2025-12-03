@@ -1,5 +1,5 @@
 # creation
-# --- Обновлен: 2025-12-03 19:35 ---
+# --- Обновлен: 2025-12-03 19:42 (АКТУАЛЬНАЯ ВЕРСИЯ ИЗ PYCHARM) ---
 # Добавлено отображение баланса в функции show_single_menu
 
 import asyncio
@@ -32,7 +32,7 @@ from utils.texts import (
     PROFILE_TEXT,
     MAIN_MENU_TEXT
 )
-from utils.helpers import add_balance_to_text  # НОВЫЙ ИМПОРТ
+from utils.helpers import add_balance_to_text  # НОВЫЙ ИМПОРТ для отображения баланса
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -40,8 +40,16 @@ router = Router()
 async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse_mode: str = "Markdown", show_balance: bool = True):
     """
     Отображает единое меню с автоматическим добавлением баланса.
+    
+    Args:
+        sender: Message или CallbackQuery.message
+        state: FSM контекст
+        text: Текст сообщения
+        keyboard: Клавиатура (может быть None)
+        parse_mode: Режим парсинга (по умолчанию Markdown)
+        show_balance: Показывать ли баланс (по умолчанию True)
     """
-    # Добавляем баланс к тексту
+    # Добавляем баланс к тексту если нужно
     if show_balance and hasattr(sender, 'from_user'):
         user_id = sender.from_user.id
         text = await add_balance_to_text(text, user_id)
@@ -152,7 +160,7 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     room = data.get('room')
     if user_id not in admins:
         await db.decrease_balance(user_id)
-    # Сохраняем ID сообщения о прогрессе (без баланса)
+    # Сохраняем ID сообщения о прогрессе (БЕЗ баланса - он уже списан)
     progress_msg_id = await show_single_menu(callback.message, state, "⏳ Генерирую новый дизайн...", None, show_balance=False)
     await callback.answer()
     result_image_url = await generate_image(photo_id, room, style, bot_token)
@@ -171,8 +179,8 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
         )
         # Используем show_single_menu для следующего меню с балансом
         await show_single_menu(
-            callback.message, 
-            state, 
+            callback.message,
+            state,
             "Что дальше? "
             "1. Вы можете сделать повторный дизайн этого же стиля. "
             "Каждый раз создается новый дизайн помещения!  "
