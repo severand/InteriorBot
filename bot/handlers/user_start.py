@@ -4,6 +4,7 @@
 # - Сохранение menu_message_id при старте
 # - Использование edit_menu для всех переходов
 # - Добавлен хэндлер main_menu для возврата
+# [2025-12-03] Добавлена обработка реферальных ссылок и обновлен профиль
 # ---
 
 from aiogram import Router, F
@@ -12,33 +13,43 @@ from aiogram.fsm.context import FSMContext
 
 # Импорты наших модулей
 from database.db import db
+from config import config
 from states.fsm import CreationStates
 from keyboards.inline import get_main_menu_keyboard, get_profile_keyboard
-from utils.texts import START_TEXT, PROFILE_TEXT, UPLOAD_PHOTO_TEXT
+from utils.texts import START_TEXT, UPLOAD_PHOTO_TEXT
 from utils.navigation import edit_menu, show_main_menu
 
 router = Router()
 
 
-@router.message(F.text == "/start")
-async def cmd_start(message: Message, state: FSMContext):
+@router.message(F.text.startswith("/start"))
+async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     """
     Обрабатывает команду /start.
     Создает пользователя в базе и показывает главное меню.
     ВАЖНО: Сохраняет menu_message_id для дальнейшей навигации.
+    ОБРАБАТЫВАЕТ РЕФЕРАЛЬНЫЕ ССЫЛКИ.
     """
     await state.clear()
 
     user_id = message.from_user.id
     username = message.from_user.username
 
-    # Создаем пользователя в базе (если его нет)
-    await db.create_user(user_id, username)
+    # Парсим реферальный код из /start ref_ABC12345
+    referrer_code = None
+    if len(message.text.split()) > 1:
+        args = message.text.split()[1]
+        if args.startswith('ref_'):
+            referrer_code = args.replace('ref_', '')
+
+    # Создаем пользователя в базе (если его нет) с реферальным кодом
+    await db.create_user(user_id, username, referrer_code)
 
     # Отправляем главное меню и СОХРАНЯЕМ его ID
     menu_msg = await message.answer(
         START_TEXT,
-        reply_markup=get_main_menu_keyboard()
+        reply_markup=get_main_menu_keyboard(is_admin=user_id in admins),
+        parse_mode="Markdown"
     )
     
     # КРИТИЧЕСКОЕ: сохраняем ID главного меню
@@ -46,19 +57,19 @@ async def cmd_start(message: Message, state: FSMContext):
 
 
 @router.callback_query(F.data == "main_menu")
-async def back_to_main_menu(callback: CallbackQuery, state: FSMContext):
+async def back_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
     Возврат в главное меню из любого места.
     Очищает состояние FSM и показывает стартовый экран.
     """
-    await show_main_menu(callback, state)
+    await show_main_menu(callback, state, admins)
     await callback.answer()
 
 
 @router.callback_query(F.data == "show_profile")
 async def show_profile(callback: CallbackQuery, state: FSMContext):
     """
-    Показывает профиль пользователя (баланс, дата регистрации).
+    Показывает профиль пользователя (баланс, дата регистрации, РЕФЕРАЛЬНАЯ ИНФО).
     РЕДАКТИРУЕТ существующее меню.
     """
     user_id = callback.from_user.id
@@ -66,24 +77,73 @@ async def show_profile(callback: CallbackQuery, state: FSMContext):
     # Получаем данные пользователя из БД
     user_data = await db.get_user_data(user_id)
 
+    if not user_data:
+        # Автоматически создаем пользователя
+        username = callback.from_user.username
+        await db.create_user(user_id, username)
+        user_data = await db.get_user_data(user_id)
+
     if user_data:
-        balance = user_data['balance']
-        reg_date = user_data['reg_date']
+        balance = user_data.get('balance', 0)
+        reg_date = user_data.get('reg_date', 'неизвестно')
+        
+        # Реферальная информация
+        referral_code = user_data.get('referral_code', '')
+        referrals_count = user_data.get('referrals_count', 0)
+        referral_balance = user_data.get('referral_balance', 0)
+        referral_total_earned = user_data.get('referral_total_earned', 0) or 0
+        referral_total_paid = user_data.get('referral_total_paid', 0) or 0
+        
+        # Получаем процент комиссии из настроек
+        commission_percent = await db.get_setting('referral_commission_percent') or '10'
+        
+        # Формируем реферальную ссылку
+        bot_username = config.BOT_USERNAME.replace('@', '')
+        referral_link = f"t.me/{bot_username}?start=ref_{referral_code}"
+        
+        # Правильное склонение слова "друг"
+        def get_word_form(count: int) -> str:
+            if count % 10 == 1 and count % 100 != 11:
+                return "друг"
+            elif 2 <= count % 10 <= 4 and (count % 100 < 10 or count % 100 >= 20):
+                return "друга"
+            else:
+                return "друзей"
+        
+        referrals_word = get_word_form(referrals_count)
+        
+        # Форматирование чисел с пробелами
+        def format_number(num: int) -> str:
+            return f"{num:,}".replace(',', ' ')
+        
+        # Текст профиля с реферальной информацией
+        profile_text = (
+            f"👤 **ВАШ ПРОФИЛЬ**\n\n"
+            f"─────────────────\n"
+            f"🎯 **Баланс генераций:** {balance}\n"
+            f"─────────────────\n\n"
+            f"🎁 **Партнёрская программа:**\n"
+            f"🔗 Ваша ссылка: `{referral_link}`\n"
+            f"👥 Приглашено: **{referrals_count}** {referrals_word}\n\n"
+            f"💰 **Реферальный баланс:**\n"
+            f"• Доступно: **{format_number(referral_balance)} руб.**\n"
+            f"• Всего заработано: {format_number(referral_total_earned)} руб.\n"
+            f"• Выплачено: {format_number(referral_total_paid)} руб.\n\n"
+            f"🎯 **Ваши условия:**\n"
+            f"• За регистрацию: +2 генерации\n"
+            f"• % от покупок: {commission_percent}%\n"
+            f"─────────────────"
+        )
 
         # Используем edit_menu вместо edit_text
         await edit_menu(
             callback=callback,
             state=state,
-            text=PROFILE_TEXT.format(
-                user_id=user_id,
-                username=user_data.get('username', 'Не указан'),
-                balance=balance,
-                reg_date=reg_date
-            ),
+            text=profile_text,
             keyboard=get_profile_keyboard()
         )
     else:
-        await callback.answer("Профиль не найден.", show_alert=True)
+        await callback.answer("❌ Ошибка создания профиля. Попробуйте /start", show_alert=True)
 
     await callback.answer()
 
