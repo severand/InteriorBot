@@ -1,5 +1,5 @@
 # creation
-# --- ОБНОВЛЕН: 2025-12-04 11:00 (Добавлено логирование генераций и активности) ---
+# --- ОБНОВЛЕН: 2025-12-04 12:22 (Добавлены уведомления об ошибках) ---
 
 import asyncio
 import logging
@@ -19,9 +19,9 @@ from keyboards.inline import (
     get_post_generation_keyboard,
     get_profile_keyboard,
     get_main_menu_keyboard,
-    get_clear_space_confirm_keyboard  # НОВАЯ КЛАВИАТУРА
+    get_clear_space_confirm_keyboard
 )
-from services.replicate_api import generate_image, clear_space_image  # Добавлен clear_space_image
+from services.replicate_api import generate_image, clear_space_image
 from states.fsm import CreationStates
 from utils.texts import (
     CHOOSE_STYLE_TEXT,
@@ -32,7 +32,7 @@ from utils.texts import (
     PROFILE_TEXT,
     MAIN_MENU_TEXT
 )
-from utils.helpers import add_balance_to_text  # Для отображения баланса
+from utils.helpers import add_balance_to_text
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -205,11 +205,32 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     )
     await callback.answer()
     
-    # Выполняем очистку
-    result_image_url = await clear_space_image(photo_id, bot_token)
+    # Выполняем очистку с обработкой ошибок
+    try:
+        result_image_url = await clear_space_image(photo_id, bot_token)
+        success = result_image_url is not None
+    except Exception as e:
+        logger.error(f"Критическая ошибка очистки пространства: {e}")
+        result_image_url = None
+        success = False
+        
+        # Уведомление админов о критической ошибке
+        try:
+            from loader import bot
+            admins_to_notify = await db.get_admins_for_notification("notify_critical_errors")
+            for admin_id in admins_to_notify:
+                try:
+                    await bot.send_message(
+                        admin_id,
+                        f"⚠️ Критическая ошибка очистки:\nПользователь: `{user_id}`\n\n{str(e)[:500]}",
+                        parse_mode="Markdown"
+                    )
+                except:
+                    pass
+        except:
+            pass
     
     # Логируем генерацию (очистка тоже генерация)
-    success = result_image_url is not None
     await db.log_generation(
         user_id=user_id,
         room_type='clear_space',
@@ -292,11 +313,32 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     progress_msg_id = await show_single_menu(callback.message, state, "⏳ Генерирую новый дизайн...", None, show_balance=False)
     await callback.answer()
     
-    # Выполняем генерацию
-    result_image_url = await generate_image(photo_id, room, style, bot_token)
+    # Выполняем генерацию с обработкой ошибок
+    try:
+        result_image_url = await generate_image(photo_id, room, style, bot_token)
+        success = result_image_url is not None
+    except Exception as e:
+        logger.error(f"Критическая ошибка генерации: {e}")
+        result_image_url = None
+        success = False
+        
+        # Уведомление админов о критической ошибке
+        try:
+            from loader import bot
+            admins_to_notify = await db.get_admins_for_notification("notify_critical_errors")
+            for admin_id in admins_to_notify:
+                try:
+                    await bot.send_message(
+                        admin_id,
+                        f"⚠️ Критическая ошибка генерации:\nПользователь: `{user_id}`\nКомната: {room}\nСтиль: {style}\n\n{str(e)[:500]}",
+                        parse_mode="Markdown"
+                    )
+                except:
+                    pass
+        except:
+            pass
     
     # ЛОГИРУЕМ ГЕНЕРАЦИЮ
-    success = result_image_url is not None
     await db.log_generation(
         user_id=user_id,
         room_type=room,
