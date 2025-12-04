@@ -107,6 +107,8 @@ async def show_admin_stats(callback: CallbackQuery, admins: list[int]):
     total_generations = await db.get_total_generations()
     generations_today = await db.get_generations_count(days=1)
     generations_week = await db.get_generations_count(days=7)
+    failed_today = await db.get_failed_generations_count(days=1)
+    failed_week = await db.get_failed_generations_count(days=7)
     conversion_rate = await db.get_conversion_rate()
 
     # ФИНАНСЫ
@@ -144,6 +146,8 @@ async def show_admin_stats(callback: CallbackQuery, admins: list[int]):
         f"• За сегодня: **{generations_today}**\n"
         f"• За неделю: **{generations_week}**\n"
         f"• Средняя конверсия: **{conversion_rate}**\n\n"
+        f"• Неудачных сегодня: **{failed_today}**\n"
+        f"• Неудачных за неделю: **{failed_week}**\n"
         "💰 **Финансы:**\n"
         f"• Общая выручка: **{total_revenue} руб.**\n"
         f"• Выручка за сегодня: **{revenue_today} руб.**\n"
