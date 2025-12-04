@@ -1,5 +1,5 @@
 # bot/database/db.py
-# --- ОБНОВЛЕН: 2025-12-03 20:34 ---
+# --- ОБНОВЛЕН: 2025-12-04 10:45 - Добавлены методы для generations и activity ---
 # Добавлены методы get_user_recent_payments и get_referrer_info для расширенного поиска
 
 import aiosqlite
@@ -13,13 +13,18 @@ from database.models import (
     CREATE_USERS_TABLE, CREATE_PAYMENTS_TABLE,
     CREATE_REFERRAL_EARNINGS_TABLE, CREATE_REFERRAL_EXCHANGES_TABLE,
     CREATE_REFERRAL_PAYOUTS_TABLE, CREATE_SETTINGS_TABLE,
+    CREATE_GENERATIONS_TABLE, CREATE_USER_ACTIVITY_TABLE,
     DEFAULT_SETTINGS,
     # Пользователи
-    GET_USER, CREATE_USER, UPDATE_BALANCE, DECREASE_BALANCE, GET_BALANCE,
+    GET_USER, CREATE_USER, UPDATE_BALANCE, DECREASE_BALANCE, GET_BALANCE, UPDATE_LAST_ACTIVITY,
     # Реферальные коды
     UPDATE_REFERRAL_CODE, GET_USER_BY_REFERRAL_CODE, UPDATE_REFERRED_BY, INCREMENT_REFERRALS_COUNT,
     # Платежи
     CREATE_PAYMENT, GET_PENDING_PAYMENT, UPDATE_PAYMENT_STATUS,
+    # Генерации
+    CREATE_GENERATION, INCREMENT_TOTAL_GENERATIONS,
+    # Активность
+    LOG_USER_ACTIVITY,
     # Реферальный баланс
     GET_REFERRAL_BALANCE, ADD_REFERRAL_BALANCE, DECREASE_REFERRAL_BALANCE, UPDATE_TOTAL_PAID,
     # Реферальные начисления
@@ -42,11 +47,13 @@ class Database:
         self.db_path = db_path
 
     async def init_db(self):
-        """Initialize database tables"""
+        """Инициализация таблиц БД"""
         async with aiosqlite.connect(self.db_path) as db:
             # Создаем все таблицы
             await db.execute(CREATE_USERS_TABLE)
             await db.execute(CREATE_PAYMENTS_TABLE)
+            await db.execute(CREATE_GENERATIONS_TABLE)
+            await db.execute(CREATE_USER_ACTIVITY_TABLE)
             await db.execute(CREATE_REFERRAL_EARNINGS_TABLE)
             await db.execute(CREATE_REFERRAL_EXCHANGES_TABLE)
             await db.execute(CREATE_REFERRAL_PAYOUTS_TABLE)
@@ -207,6 +214,134 @@ class Database:
         """Отметить платеж как успешный"""
         return await self.update_payment_status(payment_id, 'succeeded')
 
+    # ===== ГЕНЕРАЦИИ (НОВОЕ) =====
+
+    async def log_generation(self, user_id: int, room_type: str, style_type: str, 
+                            operation_type: str = 'design', success: bool = True) -> bool:
+        """
+        Залогировать генерацию.
+        Параметры:
+        - user_id: ID пользователя
+        - room_type: тип комнаты (напр. 'гостиная', 'кухня')
+        - style_type: стиль (напр. 'минимализм', 'лофт')
+        - operation_type: тип операции ('design' или др.)
+        - success: успешность генерации
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                # Логируем в таблицу generations
+                await db.execute(CREATE_GENERATION, (user_id, room_type, style_type, operation_type, success))
+                
+                # Увеличиваем счетчик в таблице users
+                await db.execute(INCREMENT_TOTAL_GENERATIONS, (user_id,))
+                
+                # Обновляем время последней активности
+                await db.execute(UPDATE_LAST_ACTIVITY, (user_id,))
+                
+                await db.commit()
+                logger.info(f"Генерация: user={user_id}, room={room_type}, style={style_type}")
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка логирования генерации: {e}")
+                return False
+
+    async def get_total_generations(self) -> int:
+        """Общее количество генераций"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("SELECT COUNT(*) FROM generations") as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
+    async def get_generations_count(self, days: int = 1) -> int:
+        """Количество генераций за период"""
+        date_threshold = datetime.now() - timedelta(days=days)
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT COUNT(*) FROM generations WHERE created_at >= ?",
+                (date_threshold.isoformat(),)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
+    async def get_conversion_rate(self) -> float:
+        """
+        Рассчитать конверсию (генераций на пользователя).
+        Возвращает среднее количество генераций на пользователя.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT AVG(total_generations) FROM users WHERE total_generations > 0"
+            ) as cursor:
+                row = await cursor.fetchone()
+                return round(row[0], 2) if row and row[0] else 0.0
+
+    async def get_popular_rooms(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Получить популярные типы комнат"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT room_type, COUNT(*) as count
+                FROM generations
+                GROUP BY room_type
+                ORDER BY count DESC
+                LIMIT ?
+                """,
+                (limit,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [{'room_type': row[0], 'count': row[1]} for row in rows]
+
+    async def get_popular_styles(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Получить популярные стили"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT style_type, COUNT(*) as count
+                FROM generations
+                GROUP BY style_type
+                ORDER BY count DESC
+                LIMIT ?
+                """,
+                (limit,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [{'style_type': row[0], 'count': row[1]} for row in rows]
+
+    # ===== АКТИВНОСТЬ (НОВОЕ) =====
+
+    async def log_activity(self, user_id: int, action_type: str) -> bool:
+        """
+        Залогировать активность пользователя.
+        Параметры:
+        - user_id: ID пользователя
+        - action_type: тип действия (напр. 'start', 'generation', 'payment', 'referral')
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                await db.execute(LOG_USER_ACTIVITY, (user_id, action_type))
+                await db.execute(UPDATE_LAST_ACTIVITY, (user_id,))
+                await db.commit()
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка логирования активности: {e}")
+                return False
+
+    async def get_active_users_count(self, days: int = 1) -> int:
+        """
+        Количество активных пользователей за период.
+        Активным считается пользователь, который совершил любое действие.
+        """
+        date_threshold = datetime.now() - timedelta(days=days)
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM user_activity WHERE created_at >= ?",
+                (date_threshold.isoformat(),)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
     # ===== РЕФЕРАЛЬНЫЙ БАЛАНС =====
 
     async def get_referral_balance(self, user_id: int) -> int:
@@ -365,7 +500,7 @@ class Database:
                 logger.error(f"Ошибка установки настройки: {e}")
                 return False
 
-    # ===== СТАТИСТИКА (существующие методы) =====
+    # ===== СТАТИСТИКА =====
 
     async def get_total_users_count(self) -> int:
         """Общее количество пользователей"""
@@ -404,8 +539,6 @@ class Database:
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
-
-    # ===== НОВЫЕ МЕТОДЫ ДЛЯ АДМИН-ПАНЕЛИ =====
 
     async def search_user(self, query: str) -> Optional[Dict[str, Any]]:
         """
@@ -536,17 +669,7 @@ class Database:
                 }
 
     async def get_user_recent_payments(self, user_id: int, limit: int = 5) -> List[Dict[str, Any]]:
-        """
-        Получить последние плbатежи пользователя.
-        Возвращает [
-            {
-                'amount': сумма,
-                'tokens': колb-во токенов,
-                'payment_date': дата,
-                'status': статус
-            }
-        ]
-        """
+        """Получить последние платежи пользователя"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
@@ -563,17 +686,10 @@ class Database:
                 return [dict(row) for row in rows]
 
     async def get_referrer_info(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Получить информацию о рефере (кто приглbасил).
-        Возвращает: {
-            'referrer_id': ID рефера,
-            'referrer_username': username рефера
-        }
-        """
+        """Получить информацию о рефере (кто пригласил)"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             
-            # Получаем referred_by пользователbя
             async with db.execute("SELECT referred_by FROM users WHERE user_id = ?", (user_id,)) as cursor:
                 row = await cursor.fetchone()
                 if not row or not row['referred_by']:
@@ -581,7 +697,6 @@ class Database:
                 
                 referrer_id = row['referred_by']
             
-            # Полbучаем данные рефера
             async with db.execute(GET_USER, (referrer_id,)) as cursor:
                 referrer_row = await cursor.fetchone()
                 if referrer_row:
@@ -592,15 +707,6 @@ class Database:
             
             return None
 
-    async def get_user_generations_count(self, user_id: int) -> int:
-        """
-        Получить количество выполненных генераций.
-        Пока заглушка - таблbица generations не реалbизована.
-        В будущем: SELECT COUNT(*) FROM generations WHERE user_id = ?
-        """
-        # Заглbушка
-        return 0
 
-
-# Создаем глbобалbьный экземплbяр
+# Создаем глобальный экземпляр
 db = Database()
