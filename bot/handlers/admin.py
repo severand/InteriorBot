@@ -1,6 +1,5 @@
 # bot/handlers/admin.py
-# --- ОБНОВЛЕН: 2025-12-04 10:55 - Добавлены реальные данные генераций и активности ---
-# Убраны заглушки "Скоро", показываются реальные данные из БД
+# --- ОБНОВЛЕН: 2025-12-04 12:25 - Добавлен счетчик неудачных генераций ---
 
 import logging
 from aiogram import Router, F
@@ -49,6 +48,7 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext, admins: l
     total_revenue = await db.get_total_revenue()
     new_today = await db.get_new_users_count(days=1)
     successful_payments = await db.get_successful_payments_count()
+    failed_today = await db.get_failed_generations_count(days=1)  # НОВОЕ!
 
     # Формируем текст
     admin_text = (
@@ -57,7 +57,8 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext, admins: l
         f"• Всего пользователей: **{total_users}**\n"
         f"• Новых за сегодня: **{new_today}**\n"
         f"• Общая выручка: **{total_revenue} руб.**\n"
-        f"• Успешных платежей: **{successful_payments}**\n\n"
+        f"• Успешных платежей: **{successful_payments}**\n"
+        f"• ⚠️ **Неудачных генераций сегодня: {failed_today}**\n\n"
         "Выберите действие:"
     )
 
@@ -146,8 +147,8 @@ async def show_admin_stats(callback: CallbackQuery, admins: list[int]):
         f"• За сегодня: **{generations_today}**\n"
         f"• За неделю: **{generations_week}**\n"
         f"• Средняя конверсия: **{conversion_rate}**\n\n"
-        f"• Неудачных сегодня: **{failed_today}**\n"
-        f"• Неудачных за неделю: **{failed_week}**\n"
+        f"• ⚠️ **Неудачных сегодня: {failed_today}**\n"
+        f"• ⚠️ **Неудачных за неделю: {failed_week}**\n"
         "💰 **Финансы:**\n"
         f"• Общая выручка: **{total_revenue} руб.**\n"
         f"• Выручка за сегодня: **{revenue_today} руб.**\n"
@@ -648,4 +649,3 @@ async def show_sources_stats(callback: CallbackQuery, admins: list[int]):
         parse_mode="Markdown"
     )
     await callback.answer()
-
