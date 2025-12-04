@@ -1,6 +1,6 @@
 # bot/handlers/admin.py
-# --- ОБНОВЛЕН: 2025-12-04 10:35 - Исправлена статистика ---
-# Убраны заглушки, показываются реальные данные из БД
+# --- ОБНОВЛЕН: 2025-12-04 10:55 - Добавлены реальные данные генераций и активности ---
+# Убраны заглушки "Скоро", показываются реальные данные из БД
 
 import logging
 from aiogram import Router, F
@@ -100,6 +100,14 @@ async def show_admin_stats(callback: CallbackQuery, admins: list[int]):
     total_users = await db.get_total_users_count()
     new_today = await db.get_new_users_count(days=1)
     new_week = await db.get_new_users_count(days=7)
+    active_today = await db.get_active_users_count(days=1)
+    active_week = await db.get_active_users_count(days=7)
+
+    # ГЕНЕРАЦИИ
+    total_generations = await db.get_total_generations()
+    generations_today = await db.get_generations_count(days=1)
+    generations_week = await db.get_generations_count(days=7)
+    conversion_rate = await db.get_conversion_rate()
 
     # ФИНАНСЫ
     total_revenue = await db.get_total_revenue()
@@ -108,19 +116,34 @@ async def show_admin_stats(callback: CallbackQuery, admins: list[int]):
     successful_payments = await db.get_successful_payments_count()
     average_payment = await db.get_average_payment()
 
+    # ПОПУЛЯРНЫЕ КОМНАТЫ И СТИЛИ
+    popular_rooms = await db.get_popular_rooms(limit=5)
+    popular_styles = await db.get_popular_styles(limit=5)
+
+    # Формируем списки
+    if popular_rooms:
+        rooms_text = "\n".join([f"  • {room['room_type']}: **{room['count']}**" for room in popular_rooms])
+    else:
+        rooms_text = "  • Данных пока нет"
+
+    if popular_styles:
+        styles_text = "\n".join([f"  • {style['style_type']}: **{style['count']}**" for style in popular_styles])
+    else:
+        styles_text = "  • Данных пока нет"
+
     stats_text = (
         "📊 **ДЕТАЛЬНАЯ СТАТИСТИКА СИСТЕМЫ**\n\n"
         "👥 **Пользователи:**\n"
         f"• Всего: **{total_users}**\n"
         f"• Новых за сегодня: **{new_today}**\n"
         f"• Новых за неделю: **{new_week}**\n"
-        f"• Активных за сегодня: **Скоро**\n"
-        f"• Активных за неделю: **Скоро**\n\n"
+        f"• Активных за сегодня: **{active_today}**\n"
+        f"• Активных за неделю: **{active_week}**\n\n"
         "🎨 **Генерации:**\n"
-        f"• Всего сгенерировано: **Скоро**\n"
-        f"• За сегодня: **Скоро**\n"
-        f"• За неделю: **Скоро**\n"
-        f"• Средняя конверсия: **Скоро**\n\n"
+        f"• Всего сгенерировано: **{total_generations}**\n"
+        f"• За сегодня: **{generations_today}**\n"
+        f"• За неделю: **{generations_week}**\n"
+        f"• Средняя конверсия: **{conversion_rate}**\n\n"
         "💰 **Финансы:**\n"
         f"• Общая выручка: **{total_revenue} руб.**\n"
         f"• Выручка за сегодня: **{revenue_today} руб.**\n"
@@ -128,9 +151,9 @@ async def show_admin_stats(callback: CallbackQuery, admins: list[int]):
         f"• Успешных платежей: **{successful_payments}**\n"
         f"• Средний чек: **{average_payment} руб.**\n\n"
         "🏠 **Популярные комнаты:**\n"
-        "Отслеживание в разработке\n\n"
+        f"{rooms_text}\n\n"
         "🎨 **Популярные стили:**\n"
-        "Отслеживание в разработке"
+        f"{styles_text}"
     )
 
     try:
@@ -206,7 +229,7 @@ async def show_users_page(callback: CallbackQuery, page: int, admins: list[int])
     await callback.answer()
 
 
-# ===== ПОИСК ПОЛЬЗОВАТЕЛЯ (НОВОЕ) =====
+# ===== ПОИСК ПОЛЬЗОВАТЕЛЯ =====
 @router.callback_query(F.data == "admin_find_user")
 async def start_find_user(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """Начало поиска пользователя"""
@@ -273,14 +296,12 @@ async def process_search_query(message: Message, state: FSMContext, admins: list
     referral_code = user_data['referral_code']
     referrals_count = user_data['referrals_count']
     reg_date = user_data['reg_date']
+    total_generations = user_data.get('total_generations', 0)
 
     # Получаем статистику платежей
     payments_stats = await db.get_user_payments_stats(found_user_id)
     payments_count = payments_stats['count']
     total_paid = payments_stats['total_amount']
-
-    # Получаем количество генераций
-    generations_count = await db.get_user_generations_count(found_user_id)
 
     # Получаем последние платежи
     recent_payments = await db.get_user_recent_payments(found_user_id, limit=5)
@@ -327,7 +348,7 @@ async def process_search_query(message: Message, state: FSMContext, admins: list
         "📊 **Статистика:**\n"
         f"• Количество оплат: **{payments_count}**\n"
         f"• Всего оплачено: **{total_paid} руб.**\n"
-        f"• Выполнено генераций: **{generations_count}**\n\n"
+        f"• Выполнено генераций: **{total_generations}**\n\n"
         "💳 **Последние платежи:**\n"
         f"{payments_text}\n"
         "⚙️ **Доступные действия:**\n"
@@ -387,7 +408,7 @@ async def show_payments_history(callback: CallbackQuery, admins: list[int]):
     await callback.answer()
 
 
-# ===== КОМАНДЫ (ОСТАВЛЯЕМ КАК БЫЛИ) =====
+# ===== КОМАНДЫ =====
 
 @router.message(Command("add_tokens"))
 async def cmd_add_tokens(message: Message, admins: list[int]):
