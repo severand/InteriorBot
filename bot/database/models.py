@@ -1,4 +1,5 @@
 # bot/database/models.py
+# --- ОБНОВЛЕН: 2025-12-04 10:40 - Добавлены таблицы generations и user_activity ---
 """SQL queries for database initialization"""
 
 # ===== СУЩЕСТВУЮЩИЕ ТАБЛИЦЫ =====
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
     total_generations INTEGER DEFAULT 0,
     successful_payments INTEGER DEFAULT 0,
     total_spent INTEGER DEFAULT 0,
+    last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
     
     FOREIGN KEY (referred_by) REFERENCES users (user_id)
 )
@@ -42,12 +44,40 @@ CREATE TABLE IF NOT EXISTS payments (
     amount INTEGER NOT NULL,
     tokens INTEGER NOT NULL,
     status TEXT DEFAULT 'pending',
+    payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (user_id)
 )
 """
 
-# ===== НОВЫЕ ТАБЛИЦЫ ДЛЯ РЕФЕРАЛЬНОЙ СИСТЕМЫ =====
+# ===== НОВЫЕ ТАБЛИЦЫ =====
+
+# Таблица генераций
+CREATE_GENERATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS generations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    room_type TEXT NOT NULL,
+    style_type TEXT NOT NULL,
+    operation_type TEXT DEFAULT 'design',
+    success BOOLEAN DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (user_id)
+)
+"""
+
+# Таблица активности (для отслеживания активных пользователей)
+CREATE_USER_ACTIVITY_TABLE = """
+CREATE TABLE IF NOT EXISTS user_activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    action_type TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (user_id)
+)
+"""
+
+# ===== ТАБЛИЦЫ РЕФЕРАЛЬНОЙ СИСТЕМЫ =====
 
 CREATE_REFERRAL_EARNINGS_TABLE = """
 CREATE TABLE IF NOT EXISTS referral_earnings (
@@ -101,7 +131,7 @@ CREATE TABLE IF NOT EXISTS settings (
 )
 """
 
-# ===== ДЕФОЛТНЫЕ НАСТРОЙКИ РЕФЕРАЛЬНОЙ ПРОГРАММЫ =====
+# ===== ДЕФОЛТНЫЕ НАСТРОЙКИ =====
 
 DEFAULT_SETTINGS = {
     'welcome_bonus': '3',
@@ -115,12 +145,13 @@ DEFAULT_SETTINGS = {
 
 # ===== SQL QUERIES ДЛЯ CRUD ОПЕРАЦИЙ =====
 
-# --- Пользователи (существующие) ---
+# --- Пользователи ---
 GET_USER = "SELECT * FROM users WHERE user_id = ?"
 CREATE_USER = "INSERT INTO users (user_id, username, balance, referral_code) VALUES (?, ?, ?, ?)"
 UPDATE_BALANCE = "UPDATE users SET balance = balance + ? WHERE user_id = ?"
 DECREASE_BALANCE = "UPDATE users SET balance = balance - 1 WHERE user_id = ?"
 GET_BALANCE = "SELECT balance FROM users WHERE user_id = ?"
+UPDATE_LAST_ACTIVITY = "UPDATE users SET last_activity = CURRENT_TIMESTAMP WHERE user_id = ?"
 
 # --- Реферальные коды ---
 UPDATE_REFERRAL_CODE = "UPDATE users SET referral_code = ? WHERE user_id = ?"
@@ -128,7 +159,7 @@ GET_USER_BY_REFERRAL_CODE = "SELECT * FROM users WHERE referral_code = ?"
 UPDATE_REFERRED_BY = "UPDATE users SET referred_by = ? WHERE user_id = ?"
 INCREMENT_REFERRALS_COUNT = "UPDATE users SET referrals_count = referrals_count + 1 WHERE user_id = ?"
 
-# --- Платежи (существующие) ---
+# --- Платежи ---
 CREATE_PAYMENT = """
 INSERT INTO payments (user_id, yookassa_payment_id, amount, tokens, status)
 VALUES (?, ?, ?, ?, ?)
@@ -140,8 +171,21 @@ ORDER BY created_at DESC LIMIT 1
 """
 UPDATE_PAYMENT_STATUS = """
 UPDATE payments 
-SET status = ? 
+SET status = ?, payment_date = CURRENT_TIMESTAMP
 WHERE yookassa_payment_id = ?
+"""
+
+# --- Генерации (НОВОЕ) ---
+CREATE_GENERATION = """
+INSERT INTO generations (user_id, room_type, style_type, operation_type, success)
+VALUES (?, ?, ?, ?, ?)
+"""
+INCREMENT_TOTAL_GENERATIONS = "UPDATE users SET total_generations = total_generations + 1 WHERE user_id = ?"
+
+# --- Активность (НОВОЕ) ---
+LOG_USER_ACTIVITY = """
+INSERT INTO user_activity (user_id, action_type)
+VALUES (?, ?)
 """
 
 # --- Реферальный баланс ---
