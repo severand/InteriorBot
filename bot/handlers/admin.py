@@ -1,6 +1,6 @@
 # bot/handlers/admin.py
-# --- ОБНОВЛЕН: 2025-12-03 20:41 ---
-# Добавлены даты платежей, ссылка на Telegram, информация о рефере в поиске
+# --- ОБНОВЛЕН: 2025-12-04 10:35 - Исправлена статистика ---
+# Убраны заглушки, показываются реальные данные из БД
 
 import logging
 from aiogram import Router, F
@@ -47,19 +47,17 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext, admins: l
     # Получаем статистику
     total_users = await db.get_total_users_count()
     total_revenue = await db.get_total_revenue()
-
-    # Генерации и активность - заглушки (таблицы нет)
-    total_generations = "В разработке"
-    active_today = "В разработке"
+    new_today = await db.get_new_users_count(days=1)
+    successful_payments = await db.get_successful_payments_count()
 
     # Формируем текст
     admin_text = (
         "👑 **АДМИН-ПАНЕЛЬ**\n\n"
         f"📊 **Общая статистика:**\n"
         f"• Всего пользователей: **{total_users}**\n"
-        f"• Всего генераций: **{total_generations}**\n"
+        f"• Новых за сегодня: **{new_today}**\n"
         f"• Общая выручка: **{total_revenue} руб.**\n"
-        f"• Активных сегодня: **{active_today}**\n\n"
+        f"• Успешных платежей: **{successful_payments}**\n\n"
         "Выберите действие:"
     )
 
@@ -98,26 +96,17 @@ async def show_admin_stats(callback: CallbackQuery, admins: list[int]):
         await callback.answer("❌ У вас нет прав администратора.", show_alert=True)
         return
 
-    # Получаем статистику
+    # ПОЛЬЗОВАТЕЛИ
     total_users = await db.get_total_users_count()
     new_today = await db.get_new_users_count(days=1)
     new_week = await db.get_new_users_count(days=7)
 
+    # ФИНАНСЫ
     total_revenue = await db.get_total_revenue()
     revenue_today = await db.get_revenue_by_period(days=1)
     revenue_week = await db.get_revenue_by_period(days=7)
     successful_payments = await db.get_successful_payments_count()
     average_payment = await db.get_average_payment()
-
-    # Заглушки для недоступных данных
-    total_generations = "Скоро"
-    generations_today = "Скоро"
-    generations_week = "Скоро"
-    conversion_rate = "Скоро"
-    active_today = "Скоро"
-    active_week = "Скоро"
-    popular_rooms = "Отслеживание в разработке"
-    popular_styles = "Отслеживание в разработке"
 
     stats_text = (
         "📊 **ДЕТАЛЬНАЯ СТАТИСТИКА СИСТЕМЫ**\n\n"
@@ -125,13 +114,13 @@ async def show_admin_stats(callback: CallbackQuery, admins: list[int]):
         f"• Всего: **{total_users}**\n"
         f"• Новых за сегодня: **{new_today}**\n"
         f"• Новых за неделю: **{new_week}**\n"
-        f"• Активных за сегодня: **{active_today}**\n"
-        f"• Активных за неделю: **{active_week}**\n\n"
+        f"• Активных за сегодня: **Скоро**\n"
+        f"• Активных за неделю: **Скоро**\n\n"
         "🎨 **Генерации:**\n"
-        f"• Всего сгенерировано: **{total_generations}**\n"
-        f"• За сегодня: **{generations_today}**\n"
-        f"• За неделю: **{generations_week}**\n"
-        f"• Средняя конверсия: **{conversion_rate}**\n\n"
+        f"• Всего сгенерировано: **Скоро**\n"
+        f"• За сегодня: **Скоро**\n"
+        f"• За неделю: **Скоро**\n"
+        f"• Средняя конверсия: **Скоро**\n\n"
         "💰 **Финансы:**\n"
         f"• Общая выручка: **{total_revenue} руб.**\n"
         f"• Выручка за сегодня: **{revenue_today} руб.**\n"
@@ -139,9 +128,9 @@ async def show_admin_stats(callback: CallbackQuery, admins: list[int]):
         f"• Успешных платежей: **{successful_payments}**\n"
         f"• Средний чек: **{average_payment} руб.**\n\n"
         "🏠 **Популярные комнаты:**\n"
-        f"{popular_rooms}\n\n"
+        "Отслеживание в разработке\n\n"
         "🎨 **Популярные стили:**\n"
-        f"{popular_styles}"
+        "Отслеживание в разработке"
     )
 
     try:
@@ -336,7 +325,7 @@ async def process_search_query(message: Message, state: FSMContext, admins: list
         f"🔽 **Пригласил:** {referrer_text}\n"
         f"📅 **Дата регистрации:** {reg_date}\n\n"
         "📊 **Статистика:**\n"
-        f"• Количество оплbат: **{payments_count}**\n"
+        f"• Количество оплат: **{payments_count}**\n"
         f"• Всего оплачено: **{total_paid} руб.**\n"
         f"• Выполнено генераций: **{generations_count}**\n\n"
         "💳 **Последние платежи:**\n"
@@ -403,7 +392,7 @@ async def show_payments_history(callback: CallbackQuery, admins: list[int]):
 @router.message(Command("add_tokens"))
 async def cmd_add_tokens(message: Message, admins: list[int]):
     """
-    Добавить токены пользователbю
+    Добавить токены пользователю
     Использование: /add_tokens <user_id> <количество>
     Пример: /add_tokens 123456789 10
     """
@@ -428,7 +417,7 @@ async def cmd_add_tokens(message: Message, admins: list[int]):
         tokens_to_add = int(args[2])
 
         if tokens_to_add <= 0:
-            await message.answer("❌ Количество токенов долbжно быть больше 0!")
+            await message.answer("❌ Количество токенов должно быть больше 0!")
             return
 
         await db.add_tokens(target_user_id, tokens_to_add)
@@ -436,7 +425,7 @@ async def cmd_add_tokens(message: Message, admins: list[int]):
 
         await message.answer(
             f"✅ **Успешно!**\n\n"
-            f"👤 Пользователb: `{target_user_id}`\n"
+            f"👤 Пользователь: `{target_user_id}`\n"
             f"➕ Добавлено токенов: **{tokens_to_add}**\n"
             f"💰 Новый баланс: **{new_balance}**",
             parse_mode="Markdown"
@@ -473,7 +462,7 @@ async def cmd_check_balance(message: Message, admins: list[int]):
         if len(args) != 2:
             await message.answer(
                 "❌ Неверный формат команды!\n\n"
-                "Исполbьзование: `/balance <user_id>`\n"
+                "Использование: `/balance <user_id>`\n"
                 "Пример: `/balance 123456789`",
                 parse_mode="Markdown"
             )
@@ -503,8 +492,8 @@ async def cmd_check_balance(message: Message, admins: list[int]):
 @router.message(Command("users"))
 async def cmd_list_users(message: Message, admins: list[int]):
     """
-    Показать список послbедних 10 пользователей
-    Исполbьзование: /users
+    Показать список последних 10 пользователей
+    Использование: /users
     """
     user_id = message.from_user.id
 
@@ -536,4 +525,4 @@ async def cmd_list_users(message: Message, admins: list[int]):
 
     except Exception as e:
         logger.error(f"Error in list_users: {e}")
-        await message.answer(f"❌ Произошлbа ошибка: {e}")
+        await message.answer(f"❌ Произошла ошибка: {e}")
