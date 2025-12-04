@@ -72,3 +72,49 @@ async def generate_image(photo_file_id: str, room: str, style: str, bot_token: s
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}")
         return None
+
+
+async def clear_space_image(photo_file_id: str, bot_token: str) -> str | None:
+    """
+    Очистка пространства от мебели и предметов.
+    Использует промпт без стилей для удаления всех объектов.
+    """
+    if not config.REPLICATE_API_TOKEN:
+        return "https://i.imgur.com/K1x5d1H.png"
+
+    try:
+        import replicate
+        os.environ["REPLICATE_API_TOKEN"] = config.REPLICATE_API_TOKEN
+
+        # Промпт для очистки пространства - без стилей и дополнительных вводных
+        prompt = (
+            "Empty room interior with clean walls, floor and ceiling only, "
+            "no furniture, no objects, no decorations, bare space, "
+            "architectural photography, 4K, high quality"
+        )
+        logger.info("🧽 Очистка пространства...")
+
+        output = replicate.run(
+            MODEL_ID,
+            input={
+                "prompt": prompt,
+                "steps": 25,
+                "width": 1024,
+                "height": 1024,
+                "guidance": 3,
+                "aspect_ratio": "1:1",
+                "output_format": "webp",
+                "output_quality": 85,
+            }
+        )
+
+        if output:
+            try:
+                return output.url()
+            except:
+                return str(output)
+        return None
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка очистки: {e}")
+        return None
