@@ -1,5 +1,5 @@
 # bot/database/db.py
-# --- ОБНОВЛЕН: 2025-12-04 11:15 - Добавлен метод get_failed_generations_count ---
+# --- ОБНОВЛЕН: 2025-12-04 11:36 - Добавлены методы для уведомлений и источников трафика ---
 # Добавлены методы get_user_recent_payments и get_referrer_info для расширенного поиска
 
 import aiosqlite
@@ -14,6 +14,7 @@ from database.models import (
     CREATE_REFERRAL_EARNINGS_TABLE, CREATE_REFERRAL_EXCHANGES_TABLE,
     CREATE_REFERRAL_PAYOUTS_TABLE, CREATE_SETTINGS_TABLE,
     CREATE_GENERATIONS_TABLE, CREATE_USER_ACTIVITY_TABLE,
+    CREATE_ADMIN_NOTIFICATIONS_TABLE, CREATE_USER_SOURCES_TABLE,
     DEFAULT_SETTINGS,
     # Пользователи
     GET_USER, CREATE_USER, UPDATE_BALANCE, DECREASE_BALANCE, GET_BALANCE, UPDATE_LAST_ACTIVITY,
@@ -54,6 +55,8 @@ class Database:
             await db.execute(CREATE_PAYMENTS_TABLE)
             await db.execute(CREATE_GENERATIONS_TABLE)
             await db.execute(CREATE_USER_ACTIVITY_TABLE)
+            await db.execute(CREATE_ADMIN_NOTIFICATIONS_TABLE)
+            await db.execute(CREATE_USER_SOURCES_TABLE)
             await db.execute(CREATE_REFERRAL_EARNINGS_TABLE)
             await db.execute(CREATE_REFERRAL_EXCHANGES_TABLE)
             await db.execute(CREATE_REFERRAL_PAYOUTS_TABLE)
@@ -356,6 +359,103 @@ class Database:
             ) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
+
+    # ===== УВЕДОМЛЕНИЯ АДМИНОВ (НОВОЕ) =====
+
+    async def get_admin_notifications(self, admin_id: int) -> Dict[str, Any]:
+        """
+        Получить настройки уведомлений для админа.
+        Возвращает словарь с флагами уведомлений.
+        """
+        query = """
+            SELECT admin_id, notify_new_users, notify_new_payments, notify_critical_errors
+            FROM admin_notifications
+            WHERE admin_id = ?
+        """
+        async with aiosqlite.connect(self.db_path) as conn:
+            async with conn.execute(query, (admin_id,)) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    # Если запись не создана – по умолчанию все включено
+                    return {
+                        "admin_id": admin_id,
+                        "notify_new_users": 1,
+                        "notify_new_payments": 1,
+                        "notify_critical_errors": 1,
+                    }
+                return {
+                    "admin_id": row[0],
+                    "notify_new_users": row[1],
+                    "notify_new_payments": row[2],
+                    "notify_critical_errors": row[3],
+                }
+
+    async def set_admin_notifications(self, admin_id: int, notify_new_users: int, 
+                                     notify_new_payments: int, notify_critical_errors: int) -> None:
+        """
+        Установить настройки уведомлений для админа.
+        """
+        query = """
+            INSERT INTO admin_notifications (admin_id, notify_new_users, notify_new_payments, notify_critical_errors)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(admin_id) DO UPDATE SET
+                notify_new_users = excluded.notify_new_users,
+                notify_new_payments = excluded.notify_new_payments,
+                notify_critical_errors = excluded.notify_critical_errors
+        """
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(query, (admin_id, notify_new_users, notify_new_payments, notify_critical_errors))
+            await conn.commit()
+
+    async def get_admins_for_notification(self, notify_field: str) -> List[int]:
+        """
+        Получить список админов, у которых включен определённый тип уведомлений.
+        notify_field: 'notify_new_users' | 'notify_new_payments' | 'notify_critical_errors'
+        Возвращает список admin_id.
+        """
+        if notify_field not in ("notify_new_users", "notify_new_payments", "notify_critical_errors"):
+            raise ValueError("Invalid notify_field")
+
+        query = f"""
+            SELECT admin_id FROM admin_notifications
+            WHERE {notify_field} = 1
+        """
+        async with aiosqlite.connect(self.db_path) as conn:
+            async with conn.execute(query) as cursor:
+                rows = await cursor.fetchall()
+                return [r[0] for r in rows]
+
+    # ===== ИСТОЧНИКИ ТРАФИКА (НОВОЕ) =====
+
+    async def set_user_source(self, user_id: int, source: str) -> None:
+        """
+        Сохранить источник для пользователя, если еще не сохранен.
+        """
+        query_check = "SELECT 1 FROM user_sources WHERE user_id = ?"
+        query_insert = "INSERT INTO user_sources (user_id, source) VALUES (?, ?)"
+        async with aiosqlite.connect(self.db_path) as conn:
+            async with conn.execute(query_check, (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return
+            await conn.execute(query_insert, (user_id, source))
+            await conn.commit()
+
+    async def get_sources_stats(self) -> List[Dict[str, Any]]:
+        """
+        Получить статистику по источникам трафика.
+        Возвращает список источников и количество пользователей с каждого из них.
+        """
+        query = """
+            SELECT source, COUNT(*) as count
+            FROM user_sources
+            GROUP BY source
+            ORDER BY count DESC
+        """
+        async with aiosqlite.connect(self.db_path) as conn:
+            async with conn.execute(query) as cursor:
+                rows = await cursor.fetchall()
+                return [{"source": r[0], "count": r[1]} for r in rows]
 
     # ===== РЕФЕРАЛЬНЫЙ БАЛАНС =====
 
