@@ -1,9 +1,7 @@
 # bot/handlers/user_start.py
-# --- ОБНОВЛЕН: 2025-12-04 12:18 - Исправлены отступы источников и уведомлений ---
-# [2025-11-23 19:00 MSK] Реализована система единого меню:
-# - Сохранение menu_message_id при старте
-# - Использование edit_menu для всех переходов
-# - Добавлен хэндлер main_menu для возврата
+# --- ОБНОВЛЕН: 2025-12-04 12:40 - Убрано дублирование баланса в профиле ---
+# [2025-12-04 12:18] Исправлены отступы источников и уведомлений
+# [2025-11-23 19:00 MSK] Реализована система единого меню
 # [2025-12-03] Добавлена обработка реферальных ссылок и обновлен профиль
 # [2025-12-03 19:46] Добавлено отображение баланса в cmd_start
 
@@ -164,11 +162,13 @@ async def show_profile(callback: CallbackQuery, state: FSMContext):
         )
 
         # Используем edit_menu вместо edit_text
+        # ПРОФИЛЬ УЖЕ СОДЕРЖИТ БАЛАНС - НЕ ДОБАВЛЯЕМ ЕГО ВТОРОЙ РАЗ!
         await edit_menu(
             callback=callback,
             state=state,
             text=profile_text,
-            keyboard=get_profile_keyboard()
+            keyboard=get_profile_keyboard(),
+            show_balance=False  # КРИТИЧНО: баланс уже в profile_text!
         )
     else:
         await callback.answer("❌ Ошибка создания профиля. Попробуйте /start", show_alert=True)
