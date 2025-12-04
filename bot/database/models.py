@@ -1,5 +1,5 @@
 # bot/database/models.py
-# --- ОБНОВЛЕН: 2025-12-04 10:40 - Добавлены таблицы generations и user_activity ---
+# --- ОБНОВЛЕН: 2025-12-04 11:35 - Добавлены таблицы admin_notifications и user_sources ---
 """SQL queries for database initialization"""
 
 # ===== СУЩЕСТВУЮЩИЕ ТАБЛИЦЫ =====
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS payments (
 )
 """
 
-# ===== НОВЫЕ ТАБЛИЦЫ =====
+# ===== ТАБЛИЦЫ ДЛЯ ОТСЛЕЖИВАНИЯ АКТИВНОСТИ =====
 
 # Таблица генераций
 CREATE_GENERATIONS_TABLE = """
@@ -72,6 +72,28 @@ CREATE TABLE IF NOT EXISTS user_activity (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     action_type TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (user_id)
+)
+"""
+
+# ===== ТАБЛИЦЫ АДМИН-ФУНКЦИЙ (НОВОЕ) =====
+
+# Настройки уведомлений для администраторов
+CREATE_ADMIN_NOTIFICATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS admin_notifications (
+    admin_id INTEGER PRIMARY KEY,
+    notify_new_users INTEGER DEFAULT 1,
+    notify_new_payments INTEGER DEFAULT 1,
+    notify_critical_errors INTEGER DEFAULT 1
+)
+"""
+
+# Источники трафика (откуда пришел пользователь)
+CREATE_USER_SOURCES_TABLE = """
+CREATE TABLE IF NOT EXISTS user_sources (
+    user_id INTEGER PRIMARY KEY,
+    source TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (user_id)
 )
@@ -175,14 +197,14 @@ SET status = ?, payment_date = CURRENT_TIMESTAMP
 WHERE yookassa_payment_id = ?
 """
 
-# --- Генерации (НОВОЕ) ---
+# --- Генерации ---
 CREATE_GENERATION = """
 INSERT INTO generations (user_id, room_type, style_type, operation_type, success)
 VALUES (?, ?, ?, ?, ?)
 """
 INCREMENT_TOTAL_GENERATIONS = "UPDATE users SET total_generations = total_generations + 1 WHERE user_id = ?"
 
-# --- Активность (НОВОЕ) ---
+# --- Активность ---
 LOG_USER_ACTIVITY = """
 INSERT INTO user_activity (user_id, action_type)
 VALUES (?, ?)
