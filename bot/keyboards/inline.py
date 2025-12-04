@@ -55,10 +55,22 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 def get_room_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора комнаты с кнопкой 'Очистить пространство'"""
     builder = InlineKeyboardBuilder()
+    # Кнопка очистки пространства вверху на всю ширину
+    builder.row(InlineKeyboardButton(text="🧽 Очистить пространство", callback_data="clear_space_confirm"))
+    # Комнаты
     for key, text in ROOM_TYPES.items():
         builder.row(InlineKeyboardButton(text=text, callback_data=f"room_{key}"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения очистки пространства"""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="✅ Очистить", callback_data="clear_space_execute"))
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="clear_space_cancel"))
     builder.adjust(1)
     return builder.as_markup()
 
