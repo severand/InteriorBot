@@ -8,6 +8,7 @@ from database.db import db
 from keyboards.inline import get_payment_check_keyboard, get_payment_keyboard, get_main_menu_keyboard
 from utils.texts import PAYMENT_CREATED, PAYMENT_SUCCESS_TEXT, PAYMENT_ERROR_TEXT, MAIN_MENU_TEXT
 from services.payment_api import create_payment_yookassa, find_payment
+from utils.helpers import add_balance_to_text  # Добавлен импорт
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -15,8 +16,10 @@ router = Router()
 @router.callback_query(F.data == "buy_generations")
 async def show_packages(callback: CallbackQuery):
     """Показать пакеты генераций с возвратом к главному меню"""
+    text = "Выберите пакет генераций:"
+    text = await add_balance_to_text(text, callback.from_user.id)  # Добавлен баланс
     await callback.message.edit_text(
-        "Выберите пакет генераций:",
+        text,
         reply_markup=get_payment_keyboard()
     )
     await callback.answer()
@@ -24,8 +27,9 @@ async def show_packages(callback: CallbackQuery):
 @router.callback_query(F.data == "main_menu")
 async def back_to_main_menu(callback: CallbackQuery, admins: list[int]):
     """Возврат к главному меню из экрана оплаты"""
+    text = await add_balance_to_text(MAIN_MENU_TEXT, callback.from_user.id)  # Добавлен баланс
     await callback.message.edit_text(
-        MAIN_MENU_TEXT,
+        text,
         reply_markup=get_main_menu_keyboard(is_admin=callback.from_user.id in admins)
     )
     await callback.answer()
@@ -48,11 +52,13 @@ async def create_payment(callback: CallbackQuery):
         amount=payment_data['amount'],
         tokens=payment_data['tokens']
     )
+    text = PAYMENT_CREATED.format(
+        amount=amount,
+        tokens=tokens_amount
+    )
+    text = await add_balance_to_text(text, user_id)  # Добавлен баланс
     await callback.message.edit_text(
-        PAYMENT_CREATED.format(
-            amount=amount,
-            tokens=tokens_amount
-        ),
+        text,
         reply_markup=get_payment_check_keyboard(payment_data['confirmation_url'])
     )
     await callback.answer()
@@ -140,8 +146,11 @@ async def check_payment(callback: CallbackQuery, admins: list[int]):
         )
         
         # 4. Показываем успех
+        balance = await db.get_balance(user_id)
+        text = PAYMENT_SUCCESS_TEXT.format(balance=balance)
+        text = await add_balance_to_text(text, user_id)  # Добавлен баланс
         await callback.message.edit_text(
-            PAYMENT_SUCCESS_TEXT.format(balance=await db.get_balance(user_id)),
+            text,
             reply_markup=get_main_menu_keyboard(is_admin=user_id in admins)
         )
     else:
