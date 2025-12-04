@@ -156,6 +156,20 @@ async def check_payment(callback: CallbackQuery, admins: list[int]):
     else:
         await callback.answer(PAYMENT_ERROR_TEXT, show_alert=True)
 
+        # Уведомление админов о новой оплате
+        from loader import bot
+        admins_to_notify = await db.get_admins_for_notification("notify_new_payments")
+        for admin_id in admins_to_notify:
+        try:
+               await bot.send_message(
+               admin_id,
+               f"💳 Новая оплата: пользователь `{user_id}`, сумма: {amount} руб., токенов: {tokens}",
+                parse_mode="Markdown"
+            )
+         except Exception as e:
+                logger.error(f"Не удалось отправить уведомление о платеже админу {admin_id}: {e}")
+  
+
 @router.callback_query(F.data == "show_profile")
 async def show_profile_payment(callback: CallbackQuery):
     # Этот хэндлер больше не нужен, так как основной в user_start.py
