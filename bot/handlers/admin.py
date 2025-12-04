@@ -547,3 +547,101 @@ async def cmd_list_users(message: Message, admins: list[int]):
     except Exception as e:
         logger.error(f"Error in list_users: {e}")
         await message.answer(f"❌ Произошла ошибка: {e}")
+
+# ===== УВЕДОМЛЕНИЯ АДМИНОВ =====
+
+@router.callback_query(F.data == "admin_notifications")
+async def show_admin_notifications(callback: CallbackQuery, admins: list[int]):
+    user_id = callback.from_user.id
+    if not is_admin(user_id, admins):
+        await callback.answer("❌ У вас нет прав администратора.", show_alert=True)
+        return
+
+    settings = await db.get_admin_notifications(user_id)
+
+    text = (
+        "🔔 **НАСТРОЙКИ УВЕДОМЛЕНИЙ**\n\n"
+        f"• Новый пользователь: {'✅' if settings['notify_new_users'] else '❌'}\n"
+        f"• Новая оплата: {'✅' if settings['notify_new_payments'] else '❌'}\n"
+        f"• Критические ошибки: {'✅' if settings['notify_critical_errors'] else '❌'}\n\n"
+        "Нажмите на кнопку, чтобы переключить."
+    )
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"👤 Новый пользователь {'✅' if settings['notify_new_users'] else '❌'}",
+            callback_data="notify_toggle_new_users"
+        )],
+        [InlineKeyboardButton(
+            text=f"💳 Новая оплата {'✅' if settings['notify_new_payments'] else '❌'}",
+            callback_data="notify_toggle_new_payments"
+        )],
+        [InlineKeyboardButton(
+            text=f"⚠️ Критические ошибки {'✅' if settings['notify_critical_errors'] else '❌'}",
+            callback_data="notify_toggle_critical"
+        )],
+        [InlineKeyboardButton(text="⬅️ Назад в админку", callback_data="admin_main")]
+    ])
+
+    await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+async def _toggle_notify_field(callback: CallbackQuery, admins: list[int], field: str):
+    user_id = callback.from_user.id
+    if not is_admin(user_id, admins):
+        await callback.answer("❌ У вас нет прав администратора.", show_alert=True)
+        return
+
+    settings = await db.get_admin_notifications(user_id)
+    settings[field] = 0 if settings[field] else 1
+    await db.set_admin_notifications(
+        admin_id=user_id,
+        notify_new_users=settings["notify_new_users"],
+        notify_new_payments=settings["notify_new_payments"],
+        notify_critical_errors=settings["notify_critical_errors"],
+    )
+    await show_admin_notifications(callback, admins)
+
+
+@router.callback_query(F.data == "notify_toggle_new_users")
+async def notify_toggle_new_users(callback: CallbackQuery, admins: list[int]):
+    await _toggle_notify_field(callback, admins, "notify_new_users")
+
+
+@router.callback_query(F.data == "notify_toggle_new_payments")
+async def notify_toggle_new_payments(callback: CallbackQuery, admins: list[int]):
+    await _toggle_notify_field(callback, admins, "notify_new_payments")
+
+
+@router.callback_query(F.data == "notify_toggle_critical")
+async def notify_toggle_critical(callback: CallbackQuery, admins: list[int]):
+    await _toggle_notify_field(callback, admins, "notify_critical_errors")
+
+
+# ===== ИСТОЧНИКИ ТРАФИКА =====
+
+@router.callback_query(F.data == "admin_sources")
+async def show_sources_stats(callback: CallbackQuery, admins: list[int]):
+    user_id = callback.from_user.id
+    if not is_admin(user_id, admins):
+        await callback.answer("❌ У вас нет прав администратора.", show_alert=True)
+        return
+
+    sources = await db.get_sources_stats()
+    if not sources:
+        text = "🌐 **Источники трафика**\n\nДанных пока нет."
+    else:
+        text = "🌐 **Источники трафика**\n\n"
+        for item in sources:
+            text += f"• `{item['source']}` — **{item['count']}** пользователей\n"
+
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=get_back_to_admin_menu(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
