@@ -1,4 +1,5 @@
 # bot/keyboards/admin_kb.py
+# --- ОБНОВЛЕН: 2025-12-04 11:38 - Добавлены кнопки уведомлений и источников ---
 # Клавиатуры для админ-панели
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -11,6 +12,8 @@ def get_admin_main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="👥 Все пользователи", callback_data="admin_users")],
         [InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="admin_find_user")],
         [InlineKeyboardButton(text="💰 История платежей", callback_data="admin_payments")],
+        [InlineKeyboardButton(text="🔔 Уведомления", callback_data="admin_notifications")],
+        [InlineKeyboardButton(text="🌐 Источники трафика", callback_data="admin_sources")],
         [InlineKeyboardButton(text="🏠 Главное меню бота", callback_data="main_menu")]
     ])
     return keyboard
