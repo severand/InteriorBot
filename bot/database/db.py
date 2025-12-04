@@ -1,5 +1,5 @@
 # bot/database/db.py
-# --- ОБНОВЛЕН: 2025-12-04 10:45 - Добавлены методы для generations и activity ---
+# --- ОБНОВЛЕН: 2025-12-04 11:15 - Добавлен метод get_failed_generations_count ---
 # Добавлены методы get_user_recent_payments и get_referrer_info для расширенного поиска
 
 import aiosqlite
@@ -214,7 +214,7 @@ class Database:
         """Отметить платеж как успешный"""
         return await self.update_payment_status(payment_id, 'succeeded')
 
-    # ===== ГЕНЕРАЦИИ (НОВОЕ) =====
+    # ===== ГЕНЕРАЦИИ =====
 
     async def log_generation(self, user_id: int, room_type: str, style_type: str, 
                             operation_type: str = 'design', success: bool = True) -> bool:
@@ -258,6 +258,21 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
                 "SELECT COUNT(*) FROM generations WHERE created_at >= ?",
+                (date_threshold.isoformat(),)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
+    async def get_failed_generations_count(self, days: int = 1) -> int:
+        """
+        Количество неудачных генераций за период.
+        Параметры:
+        - days: количество дней назад (1 = за сегодня, 7 = за неделю)
+        """
+        date_threshold = datetime.now() - timedelta(days=days)
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT COUNT(*) FROM generations WHERE success = 0 AND created_at >= ?",
                 (date_threshold.isoformat(),)
             ) as cursor:
                 row = await cursor.fetchone()
@@ -309,7 +324,7 @@ class Database:
                 rows = await cursor.fetchall()
                 return [{'style_type': row[0], 'count': row[1]} for row in rows]
 
-    # ===== АКТИВНОСТЬ (НОВОЕ) =====
+    # ===== АКТИВНОСТЬ =====
 
     async def log_activity(self, user_id: int, action_type: str) -> bool:
         """
