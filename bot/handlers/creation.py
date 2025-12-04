@@ -1,5 +1,5 @@
 # creation
-# --- Обновлен: 2025-12-04 10:23 (Добавлена очистка пространства) ---
+# --- ОБНОВЛЕН: 2025-12-04 11:00 (Добавлено логирование генераций и активности) ---
 
 import asyncio
 import logging
@@ -81,12 +81,20 @@ async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse
 # ===== ГЛАВНЫЙ МЕНЮ И СТАРТ =====
 @router.callback_query(F.data == "main_menu")
 async def go_to_main_menu(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    # Логируем активность
+    await db.log_activity(user_id, 'main_menu')
+    
     await state.clear()
     await show_single_menu(callback.message, state, MAIN_MENU_TEXT, get_main_menu_keyboard())
     await callback.answer()
 
 @router.callback_query(F.data == "create_design")
 async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    # Логируем активность
+    await db.log_activity(user_id, 'create_design')
+    
     await state.clear()
     await state.set_state(CreationStates.waiting_for_photo)
     await show_single_menu(callback.message, state, UPLOAD_PHOTO_TEXT, None)
@@ -96,6 +104,10 @@ async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
 @router.message(CreationStates.waiting_for_photo, F.photo)
 async def photo_uploaded(message: Message, state: FSMContext, admins: list[int]):
     user_id = message.from_user.id
+    
+    # Логируем активность
+    await db.log_activity(user_id, 'photo_upload')
+    
     if message.media_group_id:
         data = await state.get_data()
         cached_group_id = data.get('media_group_id')
@@ -126,6 +138,10 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
 async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     room = callback.data.replace("room_", "", 1)
     user_id = callback.from_user.id
+    
+    # Логируем активность
+    await db.log_activity(user_id, f'room_{room}')
+    
     if user_id not in admins:
         balance = await db.get_balance(user_id)
         if balance <= 0:
@@ -137,7 +153,7 @@ async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[i
     await show_single_menu(callback.message, state, CHOOSE_STYLE_TEXT, get_style_keyboard())
     await callback.answer()
 
-# ===== ОЧИСТКА ПРОСТРАНСТВА (НОВОЕ) =====
+# ===== ОЧИСТКА ПРОСТРАНСТВА =====
 
 @router.callback_query(CreationStates.choose_room, F.data == "clear_space_confirm")
 async def clear_space_confirm_handler(callback: CallbackQuery, state: FSMContext):
@@ -156,6 +172,9 @@ async def clear_space_confirm_handler(callback: CallbackQuery, state: FSMContext
 async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
     """Выполнение очистки пространства"""
     user_id = callback.from_user.id
+    
+    # Логируем активность
+    await db.log_activity(user_id, 'clear_space')
     
     # Проверяем баланс (если не админ)
     if user_id not in admins:
@@ -188,6 +207,16 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     
     # Выполняем очистку
     result_image_url = await clear_space_image(photo_id, bot_token)
+    
+    # Логируем генерацию (очистка тоже генерация)
+    success = result_image_url is not None
+    await db.log_generation(
+        user_id=user_id,
+        room_type='clear_space',
+        style_type='clear_space',
+        operation_type='clear_space',
+        success=success
+    )
     
     # Удаляем сообщение о прогрессе
     if progress_msg_id:
@@ -241,21 +270,41 @@ async def back_to_room_selection(callback: CallbackQuery, state: FSMContext):
 async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
     style = callback.data.split("_")[-1]
     user_id = callback.from_user.id
+    
+    # Логируем активность
+    await db.log_activity(user_id, f'style_{style}')
+    
     if user_id not in admins:
         balance = await db.get_balance(user_id)
         if balance <= 0:
             await state.clear()
             await show_single_menu(callback.message, state, NO_BALANCE_TEXT, get_payment_keyboard())
             return
+    
     data = await state.get_data()
     photo_id = data.get('photo_id')
     room = data.get('room')
+    
     if user_id not in admins:
         await db.decrease_balance(user_id)
+    
     # Сохраняем ID сообщения о прогрессе (БЕЗ баланса - он уже списан)
     progress_msg_id = await show_single_menu(callback.message, state, "⏳ Генерирую новый дизайн...", None, show_balance=False)
     await callback.answer()
+    
+    # Выполняем генерацию
     result_image_url = await generate_image(photo_id, room, style, bot_token)
+    
+    # ЛОГИРУЕМ ГЕНЕРАЦИЮ
+    success = result_image_url is not None
+    await db.log_generation(
+        user_id=user_id,
+        room_type=room,
+        style_type=style,
+        operation_type='design',
+        success=success
+    )
+    
     # Удаляем сообщение о прогрессе после генерации
     if progress_msg_id:
         try:
