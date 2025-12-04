@@ -1,6 +1,5 @@
 # creation
-# --- Обновлен: 2025-12-03 19:42 (АКТУАЛЬНАЯ ВЕРСИЯ ИЗ PYCHARM) ---
-# Добавлено отображение баланса в функции show_single_menu
+# --- Обновлен: 2025-12-04 10:23 (Добавлена очистка пространства) ---
 
 import asyncio
 import logging
@@ -19,9 +18,10 @@ from keyboards.inline import (
     get_payment_keyboard,
     get_post_generation_keyboard,
     get_profile_keyboard,
-    get_main_menu_keyboard
+    get_main_menu_keyboard,
+    get_clear_space_confirm_keyboard  # НОВАЯ КЛАВИАТУРА
 )
-from services.replicate_api import generate_image
+from services.replicate_api import generate_image, clear_space_image  # Добавлен clear_space_image
 from states.fsm import CreationStates
 from utils.texts import (
     CHOOSE_STYLE_TEXT,
@@ -32,7 +32,7 @@ from utils.texts import (
     PROFILE_TEXT,
     MAIN_MENU_TEXT
 )
-from utils.helpers import add_balance_to_text  # НОВЫЙ ИМПОРТ для отображения баланса
+from utils.helpers import add_balance_to_text  # Для отображения баланса
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -135,6 +135,98 @@ async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[i
     await state.update_data(room=room)
     await state.set_state(CreationStates.choose_style)
     await show_single_menu(callback.message, state, CHOOSE_STYLE_TEXT, get_style_keyboard())
+    await callback.answer()
+
+# ===== ОЧИСТКА ПРОСТРАНСТВА (НОВОЕ) =====
+
+@router.callback_query(CreationStates.choose_room, F.data == "clear_space_confirm")
+async def clear_space_confirm_handler(callback: CallbackQuery, state: FSMContext):
+    """Подтверждение очистки пространства"""
+    text = (
+        "⚠️ **Подтверждение очистки**\n\n"
+        "Если вы хотите действительно очистить пространство на выбранном изображении, "
+        "нажмите кнопку **Очистить**.\n\n"
+        "Если нет — вернитесь назад."
+    )
+    await show_single_menu(callback.message, state, text, get_clear_space_confirm_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(CreationStates.choose_room, F.data == "clear_space_execute")
+async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
+    """Выполнение очистки пространства"""
+    user_id = callback.from_user.id
+    
+    # Проверяем баланс (если не админ)
+    if user_id not in admins:
+        balance = await db.get_balance(user_id)
+        if balance <= 0:
+            await state.clear()
+            await show_single_menu(callback.message, state, NO_BALANCE_TEXT, get_payment_keyboard())
+            return
+    
+    data = await state.get_data()
+    photo_id = data.get('photo_id')
+    
+    if not photo_id:
+        await callback.answer("Ошибка: фото не найдено", show_alert=True)
+        return
+    
+    # Списываем баланс (если не админ)
+    if user_id not in admins:
+        await db.decrease_balance(user_id)
+    
+    # Показываем прогресс (БЕЗ баланса - он уже списан)
+    progress_msg_id = await show_single_menu(
+        callback.message, 
+        state, 
+        "⏳ Очищаю пространство...", 
+        None, 
+        show_balance=False
+    )
+    await callback.answer()
+    
+    # Выполняем очистку
+    result_image_url = await clear_space_image(photo_id, bot_token)
+    
+    # Удаляем сообщение о прогрессе
+    if progress_msg_id:
+        try:
+            await callback.message.bot.delete_message(
+                chat_id=callback.message.chat.id, 
+                message_id=progress_msg_id
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось удалить сообщение о прогрессе: {e}")
+    
+    if result_image_url:
+        await callback.message.answer_photo(
+            photo=result_image_url,
+            caption="✨ Пространство очищено!",
+            parse_mode="Markdown"
+        )
+        # Возвращаемся к выбору комнаты
+        await state.set_state(CreationStates.choose_room)
+        await show_single_menu(
+            callback.message, 
+            state, 
+            PHOTO_SAVED_TEXT, 
+            get_room_keyboard()
+        )
+    else:
+        await show_single_menu(
+            callback.message, 
+            state, 
+            "Ошибка очистки. Попробуйте еще раз.",
+            get_room_keyboard()
+        )
+
+
+@router.callback_query(CreationStates.choose_room, F.data == "clear_space_cancel")
+async def clear_space_cancel_handler(callback: CallbackQuery, state: FSMContext):
+    """Отмена очистки пространства"""
+    await state.set_state(CreationStates.choose_room)
+    await show_single_menu(callback.message, state, PHOTO_SAVED_TEXT, get_room_keyboard())
     await callback.answer()
 
 # ===== ВЫБОР СТИЛЯ/ВАРИАНТА И ГЕНЕРАЦИЯ =====
