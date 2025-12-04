@@ -1,13 +1,13 @@
 # bot/handlers/user_start.py
-# --- ИСПРАВЛЕНИЯ ВЕРСИИ ----
+# --- ОБНОВЛЕН: 2025-12-04 12:18 - Исправлены отступы источников и уведомлений ---
 # [2025-11-23 19:00 MSK] Реализована система единого меню:
 # - Сохранение menu_message_id при старте
 # - Использование edit_menu для всех переходов
 # - Добавлен хэндлер main_menu для возврата
 # [2025-12-03] Добавлена обработка реферальных ссылок и обновлен профиль
 # [2025-12-03 19:46] Добавлено отображение баланса в cmd_start
-# ---
 
+import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -19,8 +19,9 @@ from states.fsm import CreationStates
 from keyboards.inline import get_main_menu_keyboard, get_profile_keyboard
 from utils.texts import START_TEXT, UPLOAD_PHOTO_TEXT
 from utils.navigation import edit_menu, show_main_menu
-from utils.helpers import add_balance_to_text  # НОВЫЙ ИМПОРТ для отображения баланса
+from utils.helpers import add_balance_to_text
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 
@@ -50,22 +51,24 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
     # Разбор источника из start-параметра
     start_param = message.text.split()[1] if len(message.text.split()) > 1 else None
     if start_param and start_param.startswith("src_"):
-    source = start_param[4:]
-    await db.set_user_source(user_id, source)
+        source = start_param[4:]
+        await db.set_user_source(user_id, source)
 
     # Уведомление админов о новом пользователе
-    from loader import bot
-    admins_to_notify = await db.get_admins_for_notification("notify_new_users")
-    for admin_id in admins_to_notify:
     try:
-        await bot.send_message(
-            admin_id,
-            f"👤 Новый пользователь: ID `{user_id}`, username: @{username or 'не указан'}",
-            parse_mode="Markdown"
-        )
+        from loader import bot
+        admins_to_notify = await db.get_admins_for_notification("notify_new_users")
+        for admin_id in admins_to_notify:
+            try:
+                await bot.send_message(
+                    admin_id,
+                    f"👤 Новый пользователь: ID `{user_id}`, username: @{username or 'не указан'}",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Не удалось отправить уведомление админу {admin_id}: {e}")
     except Exception as e:
-        logger.error(f"Не удалось отправить уведомление админу {admin_id}: {e}")
-
+        logger.error(f"Ошибка при отправке уведомлений о новом пользователе: {e}")
 
     # Добавляем баланс к тексту приветствия
     text = await add_balance_to_text(START_TEXT, user_id)
