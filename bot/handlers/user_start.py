@@ -46,6 +46,26 @@ async def cmd_start(message: Message, state: FSMContext, admins: list[int]):
 
     # Создаем пользователя в базе (если его нет) с реферальным кодом
     await db.create_user(user_id, username, referrer_code)
+   
+    # Разбор источника из start-параметра
+    start_param = message.text.split()[1] if len(message.text.split()) > 1 else None
+    if start_param and start_param.startswith("src_"):
+    source = start_param[4:]
+    await db.set_user_source(user_id, source)
+
+    # Уведомление админов о новом пользователе
+    from loader import bot
+    admins_to_notify = await db.get_admins_for_notification("notify_new_users")
+    for admin_id in admins_to_notify:
+    try:
+        await bot.send_message(
+            admin_id,
+            f"👤 Новый пользователь: ID `{user_id}`, username: @{username or 'не указан'}",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Не удалось отправить уведомление админу {admin_id}: {e}")
+
 
     # Добавляем баланс к тексту приветствия
     text = await add_balance_to_text(START_TEXT, user_id)
