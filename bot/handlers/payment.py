@@ -1,4 +1,5 @@
 # bot/handlers/payment.py
+# --- ОБНОВЛЕН: 2025-12-04 12:15 - Исправлены отступы уведомлений о платежах ---
 
 import logging
 from aiogram import Router, F
@@ -8,7 +9,7 @@ from database.db import db
 from keyboards.inline import get_payment_check_keyboard, get_payment_keyboard, get_main_menu_keyboard
 from utils.texts import PAYMENT_CREATED, PAYMENT_SUCCESS_TEXT, PAYMENT_ERROR_TEXT, MAIN_MENU_TEXT
 from services.payment_api import create_payment_yookassa, find_payment
-from utils.helpers import add_balance_to_text  # Добавлен импорт
+from utils.helpers import add_balance_to_text
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -17,7 +18,7 @@ router = Router()
 async def show_packages(callback: CallbackQuery):
     """Показать пакеты генераций с возвратом к главному меню"""
     text = "Выберите пакет генераций:"
-    text = await add_balance_to_text(text, callback.from_user.id)  # Добавлен баланс
+    text = await add_balance_to_text(text, callback.from_user.id)
     await callback.message.edit_text(
         text,
         reply_markup=get_payment_keyboard()
@@ -27,7 +28,7 @@ async def show_packages(callback: CallbackQuery):
 @router.callback_query(F.data == "main_menu")
 async def back_to_main_menu(callback: CallbackQuery, admins: list[int]):
     """Возврат к главному меню из экрана оплаты"""
-    text = await add_balance_to_text(MAIN_MENU_TEXT, callback.from_user.id)  # Добавлен баланс
+    text = await add_balance_to_text(MAIN_MENU_TEXT, callback.from_user.id)
     await callback.message.edit_text(
         text,
         reply_markup=get_main_menu_keyboard(is_admin=callback.from_user.id in admins)
@@ -56,7 +57,7 @@ async def create_payment(callback: CallbackQuery):
         amount=amount,
         tokens=tokens_amount
     )
-    text = await add_balance_to_text(text, user_id)  # Добавлен баланс
+    text = await add_balance_to_text(text, user_id)
     await callback.message.edit_text(
         text,
         reply_markup=get_payment_check_keyboard(payment_data['confirmation_url'])
@@ -145,10 +146,26 @@ async def check_payment(callback: CallbackQuery, admins: list[int]):
             tokens=last_payment['tokens']
         )
         
-        # 4. Показываем успех
+        # 4. Уведомление админов о новой оплате
+        try:
+            from loader import bot
+            admins_to_notify = await db.get_admins_for_notification("notify_new_payments")
+            for admin_id in admins_to_notify:
+                try:
+                    await bot.send_message(
+                        admin_id,
+                        f"💳 Новая оплата: пользователь `{user_id}`, сумма: {last_payment['amount']} руб., токенов: {last_payment['tokens']}",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.error(f"Не удалось отправить уведомление о платеже админу {admin_id}: {e}")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке уведомлений о платеже: {e}")
+        
+        # 5. Показываем успех
         balance = await db.get_balance(user_id)
         text = PAYMENT_SUCCESS_TEXT.format(balance=balance)
-        text = await add_balance_to_text(text, user_id)  # Добавлен баланс
+        text = await add_balance_to_text(text, user_id)
         await callback.message.edit_text(
             text,
             reply_markup=get_main_menu_keyboard(is_admin=user_id in admins)
@@ -156,19 +173,6 @@ async def check_payment(callback: CallbackQuery, admins: list[int]):
     else:
         await callback.answer(PAYMENT_ERROR_TEXT, show_alert=True)
 
-        # Уведомление админов о новой оплате
-        from loader import bot
-        admins_to_notify = await db.get_admins_for_notification("notify_new_payments")
-        for admin_id in admins_to_notify:
-        try:
-               await bot.send_message(
-               admin_id,
-               f"💳 Новая оплата: пользователь `{user_id}`, сумма: {amount} руб., токенов: {tokens}",
-                parse_mode="Markdown"
-            )
-         except Exception as e:
-                logger.error(f"Не удалось отправить уведомление о платеже админу {admin_id}: {e}")
-  
 
 @router.callback_query(F.data == "show_profile")
 async def show_profile_payment(callback: CallbackQuery):
