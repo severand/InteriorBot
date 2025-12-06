@@ -60,6 +60,16 @@ def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
+
+def get_upload_photo_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для экрана загрузки фото с кнопкой назад"""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+
 def get_profile_keyboard() -> InlineKeyboardMarkup:
     """Профиль с реферальными кнопками"""
     builder = InlineKeyboardBuilder()
