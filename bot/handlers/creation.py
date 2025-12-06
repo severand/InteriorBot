@@ -408,15 +408,11 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
                 get_main_menu_keyboard()
             )
             return
-
+# cообщение после генерации картинки
         await show_single_menu(
             callback.message,
             state,
-            (
-                "Что дальше?\n"
-                "1. Создайте новый дизайн этого стиля.\n"
-                "2. Выберите другой стиль дизайна."
-            ),
+            "",
             get_post_generation_keyboard()
         )
     else:
