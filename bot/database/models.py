@@ -9,29 +9,30 @@ CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     username TEXT,
     balance INTEGER DEFAULT 3,
-    reg_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+
     -- Реферальные поля
     referral_code TEXT UNIQUE,
     referred_by INTEGER,
     referrals_count INTEGER DEFAULT 0,
-    
+
     -- Финансовые поля
     referral_balance INTEGER DEFAULT 0,
     referral_total_earned INTEGER DEFAULT 0,
     referral_total_paid INTEGER DEFAULT 0,
-    
+
     -- Реквизиты для выплат
     payment_method TEXT,
     payment_details TEXT,
     sbp_bank TEXT,
-    
+
     -- Статистика
     total_generations INTEGER DEFAULT 0,
     successful_payments INTEGER DEFAULT 0,
     total_spent INTEGER DEFAULT 0,
     last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
-    
+
     FOREIGN KEY (referred_by) REFERENCES users (user_id)
 )
 """
