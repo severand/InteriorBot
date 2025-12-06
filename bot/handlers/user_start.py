@@ -15,6 +15,7 @@ from database.db import db
 from config import config
 from states.fsm import CreationStates
 from keyboards.inline import get_main_menu_keyboard, get_profile_keyboard, get_upload_photo_keyboard
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 
 from utils.texts import START_TEXT, UPLOAD_PHOTO_TEXT
 from utils.navigation import edit_menu, show_main_menu
@@ -93,11 +94,12 @@ async def back_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: 
     await callback.answer()
 
 
+
 @router.callback_query(F.data == "show_profile")
 async def show_profile(callback: CallbackQuery, state: FSMContext):
     """
-    Показывает профиль пользователя (баланс, дата регистрации, РЕФЕРАЛЬНАЯ ИНФО).
-    РЕДАКТИРУЕТ существующее меню.
+    Показывает профиль пользователя.
+    ИСПОЛЬЗУЕТ PROFILE_TEXT из texts.py
     """
     user_id = callback.from_user.id
 
@@ -113,57 +115,19 @@ async def show_profile(callback: CallbackQuery, state: FSMContext):
     if user_data:
         balance = user_data.get('balance', 0)
         reg_date = user_data.get('reg_date', 'неизвестно')
+        username = user_data.get('username') or callback.from_user.username or 'не указан'
 
-        # Реферальная информация
-        referral_code = user_data.get('referral_code', '')
-        referrals_count = user_data.get('referrals_count', 0)
-        referral_balance = user_data.get('referral_balance', 0)
-        referral_total_earned = user_data.get('referral_total_earned', 0) or 0
-        referral_total_paid = user_data.get('referral_total_paid', 0) or 0
+        # Форматируем текст профиля из texts.py
+        from utils.texts import PROFILE_TEXT
 
-        # Получаем процент комиссии из настроек
-        commission_percent = await db.get_setting('referral_commission_percent') or '10'
-
-        # Формируем реферальную ссылку
-        bot_username = config.BOT_USERNAME.replace('@', '')
-        referral_link = f"t.me/{bot_username}?start=ref_{referral_code}"
-
-        # Правильное склонение слова "друг"
-        def get_word_form(count: int) -> str:
-            if count % 10 == 1 and count % 100 != 11:
-                return "друг"
-            elif 2 <= count % 10 <= 4 and (count % 100 < 10 or count % 100 >= 20):
-                return "друга"
-            else:
-                return "друзей"
-
-        referrals_word = get_word_form(referrals_count)
-
-        # Форматирование чисел с пробелами
-        def format_number(num: int) -> str:
-            return f"{num:,}".replace(',', ' ')
-
-        # Текст профиля с реферальной информацией
-        profile_text = (
-            f"👤 **ВАШ ПРОФИЛЬ**\n\n"
-            f"─────────────────\n"
-            f"🎯 **Баланс генераций:** {balance}\n"
-            f"─────────────────\n\n"
-            f"🎁 **Партнёрская программа:**\n"
-            f"🔗 Ваша ссылка: `{referral_link}`\n"
-            f"👥 Приглашено: **{referrals_count}** {referrals_word}\n\n"
-            f"💰 **Реферальный баланс:**\n"
-            f"• Доступно: **{format_number(referral_balance)} руб.**\n"
-            f"• Всего заработано: {format_number(referral_total_earned)} руб.\n"
-            f"• Выплачено: {format_number(referral_total_paid)} руб.\n\n"
-            f"🎯 **Ваши условия:**\n"
-            f"• За регистрацию: +2 генерации\n"
-            f"• % от покупок: {commission_percent}%\n"
-            f"─────────────────"
+        profile_text = PROFILE_TEXT.format(
+            user_id=user_id,
+            username=username,
+            balance=balance,
+            reg_date=reg_date
         )
 
-        # Используем edit_menu вместо edit_text
-        # ПРОФИЛЬ УЖЕ СОДЕРЖИТ БАЛАНС - НЕ ДОБАВЛЯЕМ ЕГО ВТОРОЙ РАЗ!
+        # Используем edit_menu (баланс НЕ добавляем - он уже в тексте!)
         await edit_menu(
             callback=callback,
             state=state,
@@ -232,4 +196,167 @@ async def start_creation(callback: CallbackQuery, state: FSMContext):
         text=UPLOAD_PHOTO_TEXT,
         keyboard=get_upload_photo_keyboard()
     )
+    await callback.answer()
+
+
+
+
+@router.callback_query(F.data == "show_statistics")
+async def show_statistics(callback: CallbackQuery, state: FSMContext):
+    """
+    Показывает статистику пользователя (базовая версия)
+    """
+    user_id = callback.from_user.id
+
+    # Получаем данные из БД
+    user_data = await db.get_user_data(user_id)
+
+    if not user_data:
+        await callback.answer("❌ Ошибка получения данных", show_alert=True)
+        return
+
+    balance = user_data.get('balance', 0)
+    reg_date = user_data.get('reg_date', 'неизвестно')
+
+    stats_text = (
+        f"📊 **СТАТИСТИКА**\n\n"
+        f"─────────────────\n"
+        f"✨ Текущий баланс: **{balance}** генераций\n"
+        f"🗓️ С нами с: {reg_date}\n"
+        f"─────────────────\n\n"
+        f"ℹ️ Детальная статистика в разработке..."
+    )
+
+    # Клавиатура
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data="show_profile"))
+
+    # Используем edit_menu
+    await edit_menu(
+        callback=callback,
+        state=state,
+        text=stats_text,
+        keyboard=builder.as_markup(),
+        show_balance=False
+    )
+
+    await callback.answer()
+
+
+
+@router.callback_query(F.data == "show_referral_program")
+async def show_referral_program(callback: CallbackQuery, state: FSMContext):
+    """
+    Показывает экран партнёрской программы с реферальной информацией
+    """
+    user_id = callback.from_user.id
+
+    # Получаем данные пользователя
+    user_data = await db.get_user_data(user_id)
+
+    if not user_data:
+        await callback.answer("❌ Ошибка получения данных", show_alert=True)
+        return
+
+    # Реферальная информация
+    referral_code = user_data.get('referral_code', '')
+    referrals_count = user_data.get('referrals_count', 0)
+    referral_balance = user_data.get('referral_balance', 0)
+    referral_total_earned = user_data.get('referral_total_earned', 0) or 0
+    referral_total_paid = user_data.get('referral_total_paid', 0) or 0
+
+    # Получаем процент комиссии из настроек
+    commission_percent = await db.get_setting('referral_commission_percent') or '10'
+
+    # Формируем реферальную ссылку
+    bot_username = config.BOT_USERNAME.replace('@', '')
+    referral_link = f"t.me/{bot_username}?start=ref_{referral_code}"
+
+    # Правильное склонение слова "друг"
+    def get_word_form(count: int) -> str:
+        if count % 10 == 1 and count % 100 != 11:
+            return "друг"
+        elif 2 <= count % 10 <= 4 and (count % 100 < 10 or count % 100 >= 20):
+            return "друга"
+        else:
+            return "друзей"
+
+    referrals_word = get_word_form(referrals_count)
+
+    # Форматирование чисел с пробелами
+    def format_number(num: int) -> str:
+        return f"{num:,}".replace(',', ' ')
+
+    # Текст партнёрской программы
+    referral_text = (
+        f"🎁 **ПАРТНЁРСКАЯ ПРОГРАММА**\n\n"
+        f"─────────────────\n"
+        f"🔗 Ваша ссылка:\n`{referral_link}`\n\n"
+        f"👥 Приглашено: **{referrals_count}** {referrals_word}\n"
+        f"─────────────────\n\n"
+        f"💰 **Реферальный баланс:**\n"
+        f"• Доступно: **{format_number(referral_balance)} руб.**\n"
+        f"• Всего заработано: {format_number(referral_total_earned)} руб.\n"
+        f"• Выплачено: {format_number(referral_total_paid)} руб.\n\n"
+        f"🎯 **Ваши условия:**\n"
+        f"• За регистрацию: +2 генерации\n"
+        f"• % от покупок: {commission_percent}%\n"
+        f"─────────────────"
+    )
+
+    # Клавиатура для партнёрской программы
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text="💸 Вывести деньги", callback_data="referral_request_payout"),
+        InlineKeyboardButton(text="💎 Обменять на генерации", callback_data="referral_exchange_tokens")
+    )
+    builder.row(InlineKeyboardButton(text="⚙️ Реквизиты для выплат", callback_data="referral_setup_payment"))
+    builder.row(InlineKeyboardButton(text="📊 История операций", callback_data="referral_history"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data="show_profile"))
+
+    builder.adjust(2, 1, 1, 1)
+
+    # Используем edit_menu
+    await edit_menu(
+        callback=callback,
+        state=state,
+        text=referral_text,
+        keyboard=builder.as_markup(),
+        show_balance=False
+    )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "show_support")
+async def show_support(callback: CallbackQuery, state: FSMContext):
+    """
+    Показывает информацию о поддержке
+    """
+    support_text = (
+        "💬 **ПОДДЕРЖКА**\n\n"
+        "─────────────────\n"
+        "📧 Email: support@example.com\n"
+        "💬 Telegram: `@support_bot`\n"
+        "─────────────────\n\n"
+        "ℹ️ Мы ответим в течение 24 часов"
+    )
+
+    # Клавиатура
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data="show_profile"))
+
+    # Используем edit_menu
+    await edit_menu(
+        callback=callback,
+        state=state,
+        text=support_text,
+        keyboard=builder.as_markup(),
+        show_balance=False
+    )
+
     await callback.answer()
