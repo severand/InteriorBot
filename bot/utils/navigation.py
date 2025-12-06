@@ -1,5 +1,6 @@
 # bot/utils/navigation.py
-# --- ОБНОВЛЕН: 2025-12-03 19:50 (АКТУАЛЬНАЯ ВЕРСИЯ ИЗ PYCHARM) ---
+# --- ОБНОВЛЕН: 2025-12-06 20:52 (ИСПРАВЛЕНИЕ: Сохранение menu_message_id) ---
+# [2025-12-06 20:52] Исправлена потеря menu_message_id при переходе в главное меню из админ-панели
 # Добавлено отображение баланса в функции edit_menu и show_main_menu
 """
 Утилиты для навигации с единым меню.
@@ -95,23 +96,30 @@ async def edit_menu(
 async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
     Показать главное меню.
-    НЕ трогаем menu_message_id, НЕ затираем данные.
-    Просто сбрасываем состояние и редактируем уже существующее меню.
+    КРИТИЧНО: СОХРАНЯЕТ menu_message_id перед любыми операциями!
+    Просто сбрасывает состояние и редактирует уже существующее меню.
     """
     from keyboards.inline import get_main_menu_keyboard
     from utils.texts import START_TEXT
 
     user_id = callback.from_user.id
 
+    # ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сохраняем menu_message_id ПЕРЕД любыми действиями
     data = await state.get_data()
+    menu_message_id = data.get('menu_message_id')
     photo_message_id = data.get('photo_message_id')
     design_generated = data.get('design_generated', False)
 
-    logger.info(f"🏠 [MAIN MENU] BEFORE: photo={photo_message_id}, design={design_generated}")
+    logger.info(f"🏠 [MAIN MENU] BEFORE: photo={photo_message_id}, design={design_generated}, menu_id={menu_message_id}")
     logger.debug(f"🏠 Returning to main menu for user {user_id}")
 
-    # Сбрасываем ТОЛЬКО состояние FSM, данные не трогаем
+    # Сбрасываем ТОЛЬКО состояние FSM
     await state.set_state(None)
+
+    # ✅ ВОССТАНАВЛИВАЕМ menu_message_id СРАЗУ после сброса состояния
+    if menu_message_id:
+        await state.update_data(menu_message_id=menu_message_id)
+        logger.debug(f"✅ menu_message_id restored: {menu_message_id}")
 
     # Текст с балансом
     text = await add_balance_to_text(START_TEXT, user_id)
@@ -126,8 +134,6 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: lis
     )
 
     await callback.answer()
-
-
 
 
 async def update_menu_after_photo(
