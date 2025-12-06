@@ -1,8 +1,9 @@
 # creation.py
-# --- ОБНОВЛЕН: 2025-12-04 12:22 (Добавлены уведомления об ошибках) ---
+# --- ОБНОВЛЕН: 2025-12-06 (фиксы разметки Markdown/HTML, безопасные подписи) ---
 
 import asyncio
 import logging
+import html
 
 from aiogram import Router, F
 from aiogram.enums import ParseMode
@@ -23,8 +24,7 @@ from keyboards.inline import (
     get_upload_photo_keyboard
 )
 
-from services.replicate_api import generate_image_auto, \
-    clear_space_image  # ← generate_image_auto из PyCharm + clear_space_image из GitHub
+from services.replicate_api import generate_image_auto, clear_space_image
 from states.fsm import CreationStates
 from utils.texts import (
     CHOOSE_STYLE_TEXT,
@@ -41,18 +41,16 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse_mode: str = "Markdown",
-                           show_balance: bool = True):
+async def show_single_menu(
+    sender,
+    state: FSMContext,
+    text: str,
+    keyboard,
+    parse_mode: str = "Markdown",
+    show_balance: bool = True
+):
     """
     Отображает единое меню с автоматическим добавлением баланса.
-
-    Args:
-        sender: Message или CallbackQuery.message
-        state: FSM контекст
-        text: Текст сообщения
-        keyboard: Клавиатура (может быть None)
-        parse_mode: Режим парсинга (по умолчанию Markdown)
-        show_balance: Показывать ли баланс (по умолчанию True)
     """
     # Добавляем баланс к тексту если нужно
     if show_balance and hasattr(sender, 'from_user'):
@@ -74,6 +72,7 @@ async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse
             return old_menu_id
         except Exception:
             pass
+
     menu = await sender.answer(text, reply_markup=keyboard, parse_mode=parse_mode)
     await state.update_data(menu_message_id=menu.message_id)
     if old_menu_id and old_menu_id != menu.message_id:
@@ -88,7 +87,6 @@ async def show_single_menu(sender, state: FSMContext, text: str, keyboard, parse
 @router.callback_query(F.data == "main_menu")
 async def go_to_main_menu(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
-    # Логируем активность
     await db.log_activity(user_id, 'main_menu')
 
     await state.clear()
@@ -99,7 +97,6 @@ async def go_to_main_menu(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "create_design")
 async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
-    # Логируем активность
     await db.log_activity(user_id, 'create_design')
 
     await state.clear()
@@ -112,16 +109,15 @@ async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
 @router.message(CreationStates.waiting_for_photo, F.photo)
 async def photo_uploaded(message: Message, state: FSMContext, admins: list[int]):
     user_id = message.from_user.id
-
-    # Логируем активность
     await db.log_activity(user_id, 'photo_upload')
 
+    # Блок альбомов
     if message.media_group_id:
         data = await state.get_data()
         cached_group_id = data.get('media_group_id')
         try:
             await message.delete()
-        except:
+        except Exception:
             pass
         if cached_group_id != message.media_group_id:
             await state.update_data(media_group_id=message.media_group_id)
@@ -129,13 +125,14 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
             await asyncio.sleep(3)
             try:
                 await msg.delete()
-            except:
+            except Exception:
                 pass
         return
 
     await state.update_data(media_group_id=None)
     photo_file_id = message.photo[-1].file_id
 
+    # Проверка баланса
     if user_id not in admins:
         balance = await db.get_balance(user_id)
         if balance <= 0:
@@ -143,7 +140,7 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
             await show_single_menu(message, state, NO_BALANCE_TEXT, get_payment_keyboard())
             return
 
-    # ВСЁ НИЖЕ ВЫПОЛНЯЕТСЯ ДЛЯ ВСЕХ (админы и пользователи с балансом)
+    # Сохраняем фото и переходим к выбору комнаты
     await state.update_data(photo_id=photo_file_id)
     await state.set_state(CreationStates.choose_room)
 
@@ -160,7 +157,6 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
             logger.debug(f"Не удалось удалить старое меню: {e}")
 
     # Добавляем баланс к тексту
-    from utils.helpers import add_balance_to_text
     text_with_balance = await add_balance_to_text(PHOTO_SAVED_TEXT, user_id)
 
     # Отправляем НОВОЕ сообщение под фото
@@ -180,7 +176,6 @@ async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[i
     room = callback.data.replace("room_", "", 1)
     user_id = callback.from_user.id
 
-    # Логируем активность
     await db.log_activity(user_id, f'room_{room}')
 
     if user_id not in admins:
@@ -189,6 +184,7 @@ async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[i
             await state.clear()
             await show_single_menu(callback.message, state, NO_BALANCE_TEXT, get_payment_keyboard())
             return
+
     await state.update_data(room=room)
     await state.set_state(CreationStates.choose_style)
     await show_single_menu(callback.message, state, CHOOSE_STYLE_TEXT, get_style_keyboard())
@@ -196,14 +192,12 @@ async def room_chosen(callback: CallbackQuery, state: FSMContext, admins: list[i
 
 
 # ===== ОЧИСТКА ПРОСТРАНСТВА =====
-
 @router.callback_query(CreationStates.choose_room, F.data == "clear_space_confirm")
 async def clear_space_confirm_handler(callback: CallbackQuery, state: FSMContext):
-    """Подтверждение очистки пространства"""
     text = (
-        "⚠️ **Подтверждение очистки**\n\n"
+        "⚠️ Подтверждение очистки\n\n"
         "Хотите очистить изображение, "
-        "нажмите кнопку **Очистить**.\n\n"
+        "нажмите кнопку «Очистить».\n\n"
         "Если нет — вернитесь назад."
     )
     await show_single_menu(callback.message, state, text, get_clear_space_confirm_keyboard())
@@ -212,13 +206,9 @@ async def clear_space_confirm_handler(callback: CallbackQuery, state: FSMContext
 
 @router.callback_query(CreationStates.choose_room, F.data == "clear_space_execute")
 async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
-    """Выполнение очистки пространства"""
     user_id = callback.from_user.id
-
-    # Логируем активность
     await db.log_activity(user_id, 'clear_space')
 
-    # Проверяем баланс (если не админ)
     if user_id not in admins:
         balance = await db.get_balance(user_id)
         if balance <= 0:
@@ -233,11 +223,9 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
         await callback.answer("Ошибка: фото не найдено", show_alert=True)
         return
 
-    # Списываем баланс (если не админ)
     if user_id not in admins:
         await db.decrease_balance(user_id)
 
-    # Показываем прогресс (БЕЗ баланса - он уже списан)
     progress_msg_id = await show_single_menu(
         callback.message,
         state,
@@ -247,7 +235,6 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
     )
     await callback.answer()
 
-    # Выполняем очистку с обработкой ошибок
     try:
         result_image_url = await clear_space_image(photo_id, bot_token)
         success = result_image_url is not None
@@ -267,12 +254,11 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
                         f"⚠️ Критическая ошибка очистки:\nПользователь: `{user_id}`\n\n{str(e)[:500]}",
                         parse_mode="Markdown"
                     )
-                except:
+                except Exception:
                     pass
-        except:
+        except Exception:
             pass
 
-    # Логируем генерацию (очистка тоже генерация)
     await db.log_generation(
         user_id=user_id,
         room_type='clear_space',
@@ -281,7 +267,6 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
         success=success
     )
 
-    # Удаляем сообщение о прогрессе
     if progress_msg_id:
         try:
             await callback.message.bot.delete_message(
@@ -297,7 +282,6 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
             caption="✨ Пространство очищено!",
             parse_mode="Markdown"
         )
-        # Возвращаемся к выбору комнаты
         await state.set_state(CreationStates.choose_room)
         await show_single_menu(
             callback.message,
@@ -316,7 +300,6 @@ async def clear_space_execute_handler(callback: CallbackQuery, state: FSMContext
 
 @router.callback_query(CreationStates.choose_room, F.data == "clear_space_cancel")
 async def clear_space_cancel_handler(callback: CallbackQuery, state: FSMContext):
-    """Отмена очистки пространства"""
     await state.set_state(CreationStates.choose_room)
     await show_single_menu(callback.message, state, PHOTO_SAVED_TEXT, get_room_keyboard())
     await callback.answer()
@@ -334,8 +317,6 @@ async def back_to_room_selection(callback: CallbackQuery, state: FSMContext):
 async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[int], bot_token: str):
     style = callback.data.split("_")[-1]
     user_id = callback.from_user.id
-
-    # Логируем активность
     await db.log_activity(user_id, f'style_{style}')
 
     if user_id not in admins:
@@ -352,12 +333,15 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
     if user_id not in admins:
         await db.decrease_balance(user_id)
 
-    # Сохраняем ID сообщения о прогрессе (БЕЗ баланса - он уже списан)
-    progress_msg_id = await show_single_menu(callback.message, state, "⏳ Создаю новый дизайн...", None,
-                                             show_balance=False)
+    progress_msg_id = await show_single_menu(
+        callback.message,
+        state,
+        "⏳ Создаю новый дизайн...",
+        None,
+        show_balance=False
+    )
     await callback.answer()
 
-    # ИЗМЕНЕНО: Используем generate_image_auto из PyCharm с флагом переключения
     try:
         result_image_url = await generate_image_auto(photo_id, room, style, bot_token)
         success = result_image_url is not None
@@ -374,15 +358,17 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
                 try:
                     await bot.send_message(
                         admin_id,
-                        f"⚠️ Критическая ошибка генерации:\nПользователь: `{user_id}`\nКомната: {room}\nСтиль: {style}\n\n{str(e)[:500]}",
+                        (
+                            f"⚠️ Критическая ошибка генерации:\n"
+                            f"Пользователь: `{user_id}`\nКомната: {room}\nСтиль: {style}\n\n{str(e)[:500]}"
+                        ),
                         parse_mode="Markdown"
                     )
-                except:
+                except Exception:
                     pass
-        except:
+        except Exception:
             pass
 
-    # ЛОГИРУЕМ ГЕНЕРАЦИЮ
     await db.log_generation(
         user_id=user_id,
         room_type=room,
@@ -391,38 +377,55 @@ async def style_chosen(callback: CallbackQuery, state: FSMContext, admins: list[
         success=success
     )
 
-    # Удаляем сообщение о прогрессе после генерации
     if progress_msg_id:
         try:
-            await callback.message.bot.delete_message(chat_id=callback.message.chat.id, message_id=progress_msg_id)
+            await callback.message.bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=progress_msg_id
+            )
         except Exception as e:
             logger.debug(f"Не удалось удалить сообщение о прогрессе: {e}")
 
     if result_image_url:
         try:
+            # Безопасные строки для HTML
+            room_name = html.escape(room.replace('_', ' ').title(), quote=True)
+            style_name = html.escape(style.replace('_', ' ').title(), quote=True)
+
+            caption = f"✨ Ваш новый дизайн {room_name} в стиле <b>{style_name}</b>!"
+
             await callback.message.answer_photo(
                 photo=URLInputFile(result_image_url),
-                caption=f"✨ Ваш новый дизайн {room} в стиле *{style.replace('_', ' ').title()}*!",
-                parse_mode="Markdown"
+                caption=caption,
+                parse_mode="HTML"
             )
         except Exception as e:
             logger.error(f"Ошибка при отправке фото: {e}")
-            await show_single_menu(callback.message, state, "❌ Ошибка при отправке изображения. Попробуйте еще раз.",
-                                   get_main_menu_keyboard())
+            await show_single_menu(
+                callback.message,
+                state,
+                "❌ Ошибка при отправке изображения. Попробуйте еще раз.",
+                get_main_menu_keyboard()
+            )
             return
 
-        # Используем show_single_menu для следующего меню с балансом
         await show_single_menu(
             callback.message,
             state,
-            "Что дальше? "
-            "1. Создайте новый дизайн этого стиля. "
-            "2. Выбрать другой стиль дизайна.",
+            (
+                "Что дальше?\n"
+                "1. Создайте новый дизайн этого стиля.\n"
+                "2. Выберите другой стиль дизайна."
+            ),
             get_post_generation_keyboard()
         )
     else:
-        await show_single_menu(callback.message, state, "Ошибка генерации. Попробуйте еще раз.",
-                               get_main_menu_keyboard())
+        await show_single_menu(
+            callback.message,
+            state,
+            "Ошибка генерации. Попробуйте еще раз.",
+            get_main_menu_keyboard()
+        )
 
 
 @router.callback_query(F.data == "change_style")
@@ -432,30 +435,34 @@ async def change_style_after_gen(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ===== ДУБЛИКАТ УДАЛЁН =====
-# Хэндлер show_profile теперь только в handlers/user_start.py
-
+# ===== Блокировки ввода =====
 @router.message(CreationStates.waiting_for_photo)
 async def invalid_photo(message: Message):
     try:
         await message.delete()
-    except:
+    except Exception:
         pass
 
 
 @router.message(CreationStates.choose_room)
 async def block_messages_in_choose_room(message: Message, state: FSMContext):
+    """
+    Блокируем любые сообщения на экране выбора помещения.
+    Не трогаем FSM и menu_message_id.
+    """
     try:
         await message.delete()
-    except:
+    except Exception:
         pass
-    await state.clear()
-    await state.set_state(CreationStates.waiting_for_photo)
-    msg = await message.answer("🚫 Используйте кнопки! Начните заново, отправив фото.", parse_mode=ParseMode.MARKDOWN)
+
+    msg = await message.answer(
+        "🚫 Используйте кнопки!",
+        parse_mode=ParseMode.MARKDOWN
+    )
     await asyncio.sleep(3)
     try:
         await msg.delete()
-    except:
+    except Exception:
         pass
 
 
@@ -463,7 +470,7 @@ async def block_messages_in_choose_room(message: Message, state: FSMContext):
 async def block_media_types(message: Message):
     try:
         await message.delete()
-    except:
+    except Exception:
         pass
 
 
@@ -471,13 +478,13 @@ async def block_media_types(message: Message):
 async def block_unexpected_photos(message: Message, state: FSMContext):
     try:
         await message.delete()
-    except:
+    except Exception:
         pass
     msg = await message.answer("🚫 Используйте кнопки меню!")
     await asyncio.sleep(3)
     try:
         await msg.delete()
-    except:
+    except Exception:
         pass
 
 
@@ -485,5 +492,5 @@ async def block_unexpected_photos(message: Message, state: FSMContext):
 async def block_all_text_messages(message: Message):
     try:
         await message.delete()
-    except:
+    except Exception:
         pass
