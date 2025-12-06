@@ -1,30 +1,59 @@
 # bot/keyboards/admin_kb.py
-# --- ОБНОВЛЕН: 2025-12-04 11:38 - Добавлены кнопки уведомлений и источников ---
+# --- ОБНОВЛЕН: 2025-12-06 20:13 - Добавлены настройки с builder.adjust(2), убраны лишние проверки ---
 # Клавиатуры для админ-панели
 
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
-def get_admin_main_menu() -> InlineKeyboardMarkup:
+def get_admin_main_menu():
     """Главное меню админ-панели"""
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Статистика системы", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="👥 Все пользователи", callback_data="admin_users")],
-        [InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="admin_find_user")],
-        [InlineKeyboardButton(text="💰 История платежей", callback_data="admin_payments")],
-        [InlineKeyboardButton(text="🔔 Уведомления", callback_data="admin_notifications")],
-        [InlineKeyboardButton(text="🌐 Источники трафика", callback_data="admin_sources")],
-        [InlineKeyboardButton(text="🏠 Главное меню бота", callback_data="main_menu")]
-    ])
-    return keyboard
+    builder = InlineKeyboardBuilder()
+
+    builder.button(text="📊 Статистика системы", callback_data="admin_stats")
+    builder.button(text="👥 Все пользователи", callback_data="admin_users")
+    builder.button(text="🔍 Найти пользователя", callback_data="admin_find_user")
+    builder.button(text="💰 История платежей", callback_data="admin_payments")
+    builder.button(text="🔔 Уведомления", callback_data="admin_notifications")
+    builder.button(text="🌐 Источники трафика", callback_data="admin_sources")
+    builder.button(text="⚙️ Настройки", callback_data="admin_settings")
+    builder.button(text="🏠 Главное меню бота", callback_data="main_menu")
+
+    builder.adjust(2)  # ПО 2 КНОПКИ В РЯД
+
+    return builder.as_markup()
+
+
+def get_admin_settings_menu():
+    """Меню настроек: 6 кнопок по 2 в ряд + большая кнопка назад"""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(text="💰 Управление балансом", callback_data="settings_balance")
+    builder.button(text="📦 Настройка пакетов", callback_data="settings_packages")
+    builder.button(text="🎁 Скидки и акции", callback_data="settings_discounts")
+    builder.button(text="🎯 Бонусные настройки", callback_data="settings_bonuses")
+    builder.button(text="👥 Реферальная система", callback_data="settings_referral")
+    builder.button(text="🔧 Настройки", callback_data="settings_system")
+    builder.button(text="⬅️ Назад", callback_data="admin_main")
+
+    builder.adjust(2, 2, 2, 1)  # ВОТ ПРАВИЛЬНАЯ НАСТРОЙКА!
+
+    return builder.as_markup()
 
 
 def get_back_to_admin_menu() -> InlineKeyboardMarkup:
     """Кнопка возврата в админ-меню"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад в админку", callback_data="admin_main")]
+        [InlineKeyboardButton(text="⬅️ Назад ", callback_data="admin_main")]
     ])
     return keyboard
+
+
+def get_back_to_settings():
+    """Кнопка возврата в меню настроек"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад", callback_data="admin_settings")
+    return builder.as_markup()
 
 
 def get_users_list_keyboard(current_page: int, total_pages: int) -> InlineKeyboardMarkup:
@@ -48,7 +77,7 @@ def get_users_list_keyboard(current_page: int, total_pages: int) -> InlineKeyboa
         )
 
     buttons.append(nav_buttons)
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад в админку", callback_data="admin_main")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад ", callback_data="admin_main")])
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
