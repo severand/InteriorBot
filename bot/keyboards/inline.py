@@ -1,22 +1,33 @@
+# keyboards/inline.py
+# Дата объединения: 05.12.2025
+
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 from aiogram.types import InlineKeyboardMarkup
 
 # --- Настройки пакетов для покупки ---
 PACKAGES = {
-    10: 290,
-    25: 490,
-    60: 990
+    10: 350,
+    25: 787,
+    60: 1989
 }
 
 # --- Настройки комнат ---
 ROOM_TYPES = {
-    "living_room": "Гостиная 🛍️",
-    "bedroom": "Спальня 🛌",
-    "kitchen": "Кухня 🍽️",
-    "office": "Офис 🖥️",
+    "living_room": "Гостиная",
+    "bedroom": "Спальня",
+    "kitchen": "Кухня",
+    "dining_room": "Столовая",
+    "home_office": "Кабинет",
+    "bathroom_full": "Ванная",
+    "toilet": "Санузел",
+    "wardrobe": "Гардеробная",
+    "nursery": "Детская (малыш)",
+    "teen_room_boy": "Комната подростка (М)",
+    "teen_room_girl": "Комната подростка (Ж)",
+    "man_cave": "Мужская берлога",
 }
 
-# --- 10 стилей, 2 кнопки в ряд ---
+# --- 16 стилей, 2 кнопки в ряд ---
 STYLE_TYPES = [
     ("modern", "Современный"),
     ("minimalist", "Минимализм"),
@@ -28,15 +39,24 @@ STYLE_TYPES = [
     ("mediterranean", "Средиземноморский"),
     ("midcentury", "Mid‑century / винтаж"),
     ("artdeco", "Ар‑деко"),
+    ("hitech", "Хай-тек"),
+    ("classic", "Классический"),
+    ("contemporary", "Контемпорари"),
+    ("eclectic", "Эклектика"),
+    ("transitional", "Переходный"),
+    ("coastal", "Прибрежный"),
 ]
+
 
 def get_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     """Главное меню с кнопкой админ-панели для админов"""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🎨 Создать дизайн", callback_data="create_design"))
-    builder.row(InlineKeyboardButton(text="👤 Профиль", callback_data="show_profile"))
+    builder.row(InlineKeyboardButton(text="                   🎨 Создать дизайн       "
+                                          "                  ", callback_data="create_design"))
+    builder.row(InlineKeyboardButton(text="               👤 Личный кабинет          "
+                                          "                    ", callback_data="show_profile"))
     if is_admin:
-        builder.row(InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel"))
+        builder.row(InlineKeyboardButton(text="         ⚙️ Админ-панель        ", callback_data="admin_panel"))
     builder.adjust(1)
     return builder.as_markup()
 
@@ -51,7 +71,7 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="⚙️ Реквизиты для выплат", callback_data="referral_setup_payment"))
     builder.row(InlineKeyboardButton(text="📊 История операций", callback_data="referral_history"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
-    builder.adjust(1)
+    builder.adjust(2)
     return builder.as_markup()
 
 def get_room_keyboard() -> InlineKeyboardMarkup:
@@ -63,7 +83,7 @@ def get_room_keyboard() -> InlineKeyboardMarkup:
     for key, text in ROOM_TYPES.items():
         builder.row(InlineKeyboardButton(text=text, callback_data=f"room_{key}"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
-    builder.adjust(1)
+    builder.adjust(2)
     return builder.as_markup()
 
 def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
@@ -76,7 +96,7 @@ def get_clear_space_confirm_keyboard() -> InlineKeyboardMarkup:
 
 def get_style_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    # 10 стилей — 2 в ряд
+    # 16 стилей — 2 в ряд
     style_rows = [STYLE_TYPES[i:i+2] for i in range(0, len(STYLE_TYPES), 2)]
     for row in style_rows:
         buttons = [
