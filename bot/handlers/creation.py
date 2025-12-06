@@ -19,8 +19,10 @@ from keyboards.inline import (
     get_post_generation_keyboard,
     get_profile_keyboard,
     get_main_menu_keyboard,
-    get_clear_space_confirm_keyboard
+    get_clear_space_confirm_keyboard,
+    get_upload_photo_keyboard
 )
+
 from services.replicate_api import generate_image_auto, \
     clear_space_image  # ← generate_image_auto из PyCharm + clear_space_image из GitHub
 from states.fsm import CreationStates
@@ -102,7 +104,7 @@ async def choose_new_photo(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
     await state.set_state(CreationStates.waiting_for_photo)
-    await show_single_menu(callback.message, state, UPLOAD_PHOTO_TEXT, None)
+    await show_single_menu(callback.message, state, UPLOAD_PHOTO_TEXT, get_upload_photo_keyboard())
     await callback.answer()
 
 
@@ -130,26 +132,45 @@ async def photo_uploaded(message: Message, state: FSMContext, admins: list[int])
             except:
                 pass
         return
+
     await state.update_data(media_group_id=None)
     photo_file_id = message.photo[-1].file_id
+
     if user_id not in admins:
         balance = await db.get_balance(user_id)
         if balance <= 0:
             await state.clear()
             await show_single_menu(message, state, NO_BALANCE_TEXT, get_payment_keyboard())
             return
+
+    # ВСЁ НИЖЕ ВЫПОЛНЯЕТСЯ ДЛЯ ВСЕХ (админы и пользователи с балансом)
     await state.update_data(photo_id=photo_file_id)
     await state.set_state(CreationStates.choose_room)
-    # Используем show_single_menu для автоматического добавления баланса
-    # await show_single_menu(message, state, PHOTO_SAVED_TEXT, get_room_keyboard())
+
+    # Удаляем старое меню "Отправь фото"
+    data = await state.get_data()
+    old_menu_id = data.get('menu_message_id')
+    if old_menu_id:
+        try:
+            await message.bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=old_menu_id
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось удалить старое меню: {e}")
+
+    # Добавляем баланс к тексту
+    from utils.helpers import add_balance_to_text
+    text_with_balance = await add_balance_to_text(PHOTO_SAVED_TEXT, user_id)
+
     # Отправляем НОВОЕ сообщение под фото
     sent_msg = await message.answer(
-        text=PHOTO_SAVED_TEXT,
+        text=text_with_balance,
         reply_markup=get_room_keyboard(),
         parse_mode="Markdown"
     )
 
-    # Обновляем menu_message_id на ID нового сообщения
+    # Сохраняем ID нового меню
     await state.update_data(menu_message_id=sent_msg.message_id)
 
 
