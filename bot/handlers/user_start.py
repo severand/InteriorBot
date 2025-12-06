@@ -90,6 +90,11 @@ async def back_to_main_menu(callback: CallbackQuery, state: FSMContext, admins: 
     Возврат в главное меню из любого места.
     Очищает состояние FSM и показывает стартовый экран.
     """
+    # 🔍 ЛОГ: ЧТО ПРИХОДИТ В ФУНКЦИЮ
+    data = await state.get_data()
+    logger.warning(
+        f"🔍 [BACK TO MAIN] STEP 1 - BEFORE show_main_menu(): data={data}, callback.message.message_id={callback.message.message_id}")
+
     await show_main_menu(callback, state, admins)
     await callback.answer()
 
