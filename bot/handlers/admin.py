@@ -34,6 +34,7 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext, admins: l
     """
     Показывает главное меню админ-панели.
     Срабатывает при нажатии кнопки "⚙️ Админ-панель".
+    КРИТИЧНО: НЕ УДАЛЯЕТ menu_message_id!
     """
     user_id = callback.from_user.id
 
@@ -42,21 +43,28 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext, admins: l
         await callback.answer("❌ У вас нет прав администратора.", show_alert=True)
         return
 
-    # Очищаем FSM-состояние при возврате в главное меню
-    # await state.clear()
-    # Очищаем FSM-состояние, но сохраняем menu_message_id
+    # 🔍 ЛОГ 1: ЧТО БЫЛО ДО любых действий
     data = await state.get_data()
     menu_message_id = data.get('menu_message_id')
-    await state.clear()
-    if menu_message_id:
-        await state.update_data(menu_message_id=menu_message_id)
+    logger.warning(
+        f"🔍 [ADMIN PANEL] STEP 1 - BEFORE: menu_message_id={menu_message_id}, callback.message.message_id={callback.message.message_id}")
+    logger.warning(f"🔍 [ADMIN PANEL] STEP 1 - Full data: {data}")
+
+    # ✅ КРИТИЧНО: НЕ ДЕЛАЕМ state.clear()!
+    # Только сбрасываем состояние FSM, но НЕ ТРОГАЕМ данные!
+    await state.set_state(None)
+
+    # 🔍 ЛОГ 2: ЧТО ПОСЛЕ state.set_state(None)
+    data_after = await state.get_data()
+    logger.warning(
+        f"🔍 [ADMIN PANEL] STEP 2 - AFTER set_state(None): menu_message_id={data_after.get('menu_message_id')}")
 
     # Получаем статистику
     total_users = await db.get_total_users_count()
     total_revenue = await db.get_total_revenue()
     new_today = await db.get_new_users_count(days=1)
     successful_payments = await db.get_successful_payments_count()
-    failed_today = await db.get_failed_generations_count(days=1)  # НОВОЕ!
+    failed_today = await db.get_failed_generations_count(days=1)
 
     # Формируем текст
     admin_text = (
@@ -70,6 +78,9 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext, admins: l
         "Выберите действие:"
     )
 
+    # 🔍 ЛОГ 3: ПЕРЕД РЕДАКТИРОВАНИЕМ
+    logger.warning(f"🔍 [ADMIN PANEL] STEP 3 - BEFORE edit: editing message_id={callback.message.message_id}")
+
     # Редактируем сообщение
     try:
         await callback.message.edit_text(
@@ -77,8 +88,10 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext, admins: l
             reply_markup=get_admin_main_menu(),
             parse_mode="Markdown"
         )
+        # 🔍 ЛОГ 4: ПОСЛЕ РЕДАКТИРОВАНИЯ
+        logger.warning(f"🔍 [ADMIN PANEL] STEP 4 - AFTER edit: SUCCESS")
     except Exception as e:
-        logger.error(f"Ошибка редактирования сообщения админ-панели: {e}")
+        logger.error(f"🔍 [ADMIN PANEL] STEP 4 - AFTER edit: ERROR - {e}")
         await callback.message.answer(
             text=admin_text,
             reply_markup=get_admin_main_menu(),
@@ -86,6 +99,13 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext, admins: l
         )
 
     await callback.answer()
+
+
+# ===== ВОЗВРАТ В ГЛАВНОЕ МЕНЮ АДМИНКИ =====
+@router.callback_query(F.data == "admin_main")
+async def back_to_admin_main(callback: CallbackQuery, state: FSMContext, admins: list[int]):
+    """Возврат в главное меню админ-панели"""
+    await show_admin_panel(callback, state, admins)
 
 
 # ===== ВОЗВРАТ В ГЛАВНОЕ МЕНЮ АДМИНКИ =====
@@ -679,7 +699,12 @@ async def show_sources_stats(callback: CallbackQuery, admins: list[int]):
 @router.callback_query(F.data == "admin_settings")
 async def show_admin_settings(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """Показывает главное меню настроек системы"""
-    await state.clear()
+    # ✅ ИСПРАВЛЕНО: НЕ state.clear(), А state.set_state(None)!
+    await state.set_state(None)
+
+    # 🔍 ЛОГ для проверки
+    data = await state.get_data()
+    logger.warning(f"🔍 [SETTINGS] menu_message_id={data.get('menu_message_id')}")
 
     from keyboards.admin_kb import get_admin_settings_menu
 
