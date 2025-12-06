@@ -16,6 +16,8 @@ from keyboards.admin_kb import (
     get_users_list_keyboard
 )
 
+from handlers import payment
+
 logger = logging.getLogger(__name__)
 router = Router()
 
@@ -41,7 +43,13 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext, admins: l
         return
 
     # Очищаем FSM-состояние при возврате в главное меню
+    # await state.clear()
+    # Очищаем FSM-состояние, но сохраняем menu_message_id
+    data = await state.get_data()
+    menu_message_id = data.get('menu_message_id')
     await state.clear()
+    if menu_message_id:
+        await state.update_data(menu_message_id=menu_message_id)
 
     # Получаем статистику
     total_users = await db.get_total_users_count()
@@ -123,14 +131,27 @@ async def show_admin_stats(callback: CallbackQuery, admins: list[int]):
     popular_rooms = await db.get_popular_rooms(limit=5)
     popular_styles = await db.get_popular_styles(limit=5)
 
-    # Формируем списки
+    # Формируем списки с экранированием спецсимволов
     if popular_rooms:
-        rooms_text = "\n".join([f"  • {room['room_type']}: **{room['count']}**" for room in popular_rooms])
+        rooms_list = []
+        for room in popular_rooms:
+            # Экранируем спецсимволы Markdown
+            room_type_clean = room['room_type'].replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']',
+              '\\]').replace('`', '\\`')
+
+            rooms_list.append(f"  • {room_type_clean}: **{room['count']}**")
+        rooms_text = "\n".join(rooms_list)
     else:
         rooms_text = "  • Данных пока нет"
 
     if popular_styles:
-        styles_text = "\n".join([f"  • {style['style_type']}: **{style['count']}**" for style in popular_styles])
+        styles_list = []
+        for style in popular_styles:
+            # Экранируем спецсимволы Markdown
+            style_type_clean = style['style_type'].replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(
+                ']', '\\]').replace('`', '\\`')
+            styles_list.append(f"  • {style_type_clean}: **{style['count']}**")
+        styles_text = "\n".join(styles_list)
     else:
         styles_text = "  • Данных пока нет"
 
@@ -217,8 +238,8 @@ async def show_users_page(callback: CallbackQuery, page: int, admins: list[int])
         balance = user['balance']
 
         # Экранируем username
-        username_clean = username.replace('@', '').replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(
-            ']', '\\]').replace('`', '\\`')
+        username_clean = (username or "Без username").replace('@', '').replace('_', '\\_').replace('*', '\\*').replace(
+            '[', '\\[').replace(']', '\\]').replace('`', '\\`')
 
         users_text += f"{idx}. ID: `{user_id_str}` | {username_clean} | 💰 {balance}\n"
 
@@ -296,6 +317,7 @@ async def process_search_query(message: Message, state: FSMContext, admins: list
     # Получаем данные пользователя
     found_user_id = user_data['user_id']
     username = user_data['username'] or "Не указан"
+    total_generations = user_data.get('total_generations', 0)
     balance = user_data['balance']
     referral_balance = user_data['referral_balance']
     referral_code = user_data['referral_code']
@@ -335,7 +357,7 @@ async def process_search_query(message: Message, state: FSMContext, admins: list
                 date_str = payment_date.strftime("%d.%m.%Y %H:%M")
             except:
                 date_str = payment['payment_date']
-            
+
             payments_text += f"  • {payment['amount']} руб. ({payment['tokens']} ток.) - {date_str}\n"
     else:
         payments_text = "  • Платежей нет\n"
@@ -390,9 +412,8 @@ async def show_payments_history(callback: CallbackQuery, admins: list[int]):
     for idx, payment in enumerate(payments, start=1):
         status_emoji = "✅" if payment['status'] == 'succeeded' else "⏳"
         # Экранируем username
-        username_clean = payment['username'].replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']',
-                                                                                                                 '\\]').replace(
-            '`', '\\`')
+        username_clean = (payment['username'] or "Без username").replace('_', '\\_').replace('*', '\\*').replace('[',
+          '\\[').replace(']', '\\]').replace('`', '\\`')
 
         payments_text += (
             f"{idx}. {status_emoji} `{payment['user_id']}` | "
@@ -553,6 +574,7 @@ async def cmd_list_users(message: Message, admins: list[int]):
         logger.error(f"Error in list_users: {e}")
         await message.answer(f"❌ Произошла ошибка: {e}")
 
+
 # ===== УВЕДОМЛЕНИЯ АДМИНОВ =====
 
 @router.callback_query(F.data == "admin_notifications")
@@ -646,6 +668,112 @@ async def show_sources_stats(callback: CallbackQuery, admins: list[int]):
     await callback.message.edit_text(
         text=text,
         reply_markup=get_back_to_admin_menu(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+
+
+# ===== НАСТРОЙКИ: ГЛАВНОЕ МЕНЮ =====
+@router.callback_query(F.data == "admin_settings")
+async def show_admin_settings(callback: CallbackQuery, state: FSMContext, admins: list[int]):
+    """Показывает главное меню настроек системы"""
+    await state.clear()
+
+    from keyboards.admin_kb import get_admin_settings_menu
+
+    settings_text = (
+        "⚙️ **Настройки**\n\n"
+        "Выберите раздел для настройки:\n\n"
+        "💰 **Управление балансом** — добавить/снять генерации\n"
+        "📦 **Настройка пакетов** — изменить цены и количество\n"
+        "🎁 **Скидки и акции** — промокоды\n"
+        "🎯 **Бонусные настройки** — бонусы\n"
+        "👥 **Реферальная система** — комиссии\n"
+        "🔧 **Системные настройки** — лимиты"
+    )
+
+    try:
+        await callback.message.edit_text(
+            text=settings_text,
+            reply_markup=get_admin_settings_menu(),
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка показа настроек: {e}")
+
+    await callback.answer()
+
+
+# ===== НАСТРОЙКИ: ЗАГЛУШКИ =====
+@router.callback_query(F.data == "settings_balance")
+async def settings_balance(callback: CallbackQuery, admins: list[int]):
+    from keyboards.admin_kb import get_back_to_settings
+
+    await callback.message.edit_text(
+        "💰 **Управление балансом**\n\n_В разработке..._",
+        reply_markup=get_back_to_settings(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "settings_packages")
+async def settings_packages(callback: CallbackQuery, admins: list[int]):
+    from keyboards.admin_kb import get_back_to_settings
+
+    await callback.message.edit_text(
+        "📦 **Настройка пакетов**\n\n_В разработке..._",
+        reply_markup=get_back_to_settings(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "settings_discounts")
+async def settings_discounts(callback: CallbackQuery, admins: list[int]):
+    from keyboards.admin_kb import get_back_to_settings
+
+    await callback.message.edit_text(
+        "🎁 **Скидки и акции**\n\n_В разработке..._",
+        reply_markup=get_back_to_settings(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "settings_bonuses")
+async def settings_bonuses(callback: CallbackQuery, admins: list[int]):
+    from keyboards.admin_kb import get_back_to_settings
+
+    await callback.message.edit_text(
+        "🎯 **Бонусные настройки**\n\n_В разработке..._",
+        reply_markup=get_back_to_settings(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "settings_referral")
+async def settings_referral(callback: CallbackQuery, admins: list[int]):
+    from keyboards.admin_kb import get_back_to_settings
+
+    await callback.message.edit_text(
+        "👥 **Реферальная система**\n\n_В разработке..._",
+        reply_markup=get_back_to_settings(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "settings_system")
+async def settings_system(callback: CallbackQuery, admins: list[int]):
+    from keyboards.admin_kb import get_back_to_settings
+
+    await callback.message.edit_text(
+        "🔧 **Системные настройки**\n\n_В разработке..._",
+        reply_markup=get_back_to_settings(),
         parse_mode="Markdown"
     )
     await callback.answer()
