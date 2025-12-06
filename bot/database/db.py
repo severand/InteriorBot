@@ -61,11 +61,11 @@ class Database:
             await db.execute(CREATE_REFERRAL_EXCHANGES_TABLE)
             await db.execute(CREATE_REFERRAL_PAYOUTS_TABLE)
             await db.execute(CREATE_SETTINGS_TABLE)
-            
+
             # Инициализируем дефолтные настройки
             for key, value in DEFAULT_SETTINGS.items():
                 await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
-            
+
             await db.commit()
             logger.info("База данных инициализирована")
 
@@ -80,20 +80,20 @@ class Database:
                     existing = await cursor.fetchone()
                     if existing:
                         return False
-                
+
                 # Генерируем уникальный реферальный код
                 ref_code = secrets.token_urlsafe(8)
-                
+
                 # Получаем начальный бонус
                 initial_balance = int(await self.get_setting('welcome_bonus') or '3')
-                
+
                 # Создаем пользователя
                 await db.execute(CREATE_USER, (user_id, username, initial_balance, ref_code))
-                
+
                 # Обрабатываем реферальную систему
                 if referrer_code:
                     await self._process_referral(db, user_id, referrer_code)
-                
+
                 await db.commit()
                 logger.info(f"Пользователь {user_id} создан с реф. кодом {ref_code}")
                 return True
@@ -109,22 +109,22 @@ class Database:
                 referrer = await cursor.fetchone()
                 if not referrer:
                     return
-            
+
             referrer_id = referrer[0]
-            
+
             # Связываем пользователя с реферером
             await db.execute(UPDATE_REFERRED_BY, (referrer_id, user_id))
-            
+
             # Увеличиваем счетчик рефералов
             await db.execute(INCREMENT_REFERRALS_COUNT, (referrer_id,))
-            
+
             # Начисляем бонусы
             inviter_bonus = int(await self.get_setting('referral_bonus_inviter') or '2')
             invited_bonus = int(await self.get_setting('referral_bonus_invited') or '2')
-            
+
             await db.execute(UPDATE_BALANCE, (inviter_bonus, referrer_id))
             await db.execute(UPDATE_BALANCE, (invited_bonus, user_id))
-            
+
             logger.info(f"Реферал: {referrer_id} пригласил {user_id}")
         except Exception as e:
             logger.error(f"Ошибка обработки реферала: {e}")
@@ -219,8 +219,8 @@ class Database:
 
     # ===== ГЕНЕРАЦИИ =====
 
-    async def log_generation(self, user_id: int, room_type: str, style_type: str, 
-                            operation_type: str = 'design', success: bool = True) -> bool:
+    async def log_generation(self, user_id: int, room_type: str, style_type: str,
+                             operation_type: str = 'design', success: bool = True) -> bool:
         """
         Залогировать генерацию.
         Параметры:
@@ -234,13 +234,13 @@ class Database:
             try:
                 # Логируем в таблицу generations
                 await db.execute(CREATE_GENERATION, (user_id, room_type, style_type, operation_type, success))
-                
+
                 # Увеличиваем счетчик в таблице users
                 await db.execute(INCREMENT_TOTAL_GENERATIONS, (user_id,))
-                
+
                 # Обновляем время последней активности
                 await db.execute(UPDATE_LAST_ACTIVITY, (user_id,))
-                
+
                 await db.commit()
                 logger.info(f"Генерация: user={user_id}, room={room_type}, style={style_type}")
                 return True
@@ -260,8 +260,8 @@ class Database:
         date_threshold = datetime.now() - timedelta(days=days)
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "SELECT COUNT(*) FROM generations WHERE created_at >= ?",
-                (date_threshold.isoformat(),)
+                    "SELECT COUNT(*) FROM generations WHERE created_at >= ?",
+                    (date_threshold.isoformat(),)
             ) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
@@ -275,8 +275,8 @@ class Database:
         date_threshold = datetime.now() - timedelta(days=days)
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "SELECT COUNT(*) FROM generations WHERE success = 0 AND created_at >= ?",
-                (date_threshold.isoformat(),)
+                    "SELECT COUNT(*) FROM generations WHERE success = 0 AND created_at >= ?",
+                    (date_threshold.isoformat(),)
             ) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
@@ -288,7 +288,7 @@ class Database:
         """
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "SELECT AVG(total_generations) FROM users WHERE total_generations > 0"
+                    "SELECT AVG(total_generations) FROM users WHERE total_generations > 0"
             ) as cursor:
                 row = await cursor.fetchone()
                 return round(row[0], 2) if row and row[0] else 0.0
@@ -298,14 +298,14 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                """
-                SELECT room_type, COUNT(*) as count
-                FROM generations
-                GROUP BY room_type
-                ORDER BY count DESC
-                LIMIT ?
-                """,
-                (limit,)
+                    """
+                    SELECT room_type, COUNT(*) as count
+                    FROM generations
+                    GROUP BY room_type
+                    ORDER BY count DESC
+                    LIMIT ?
+                    """,
+                    (limit,)
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [{'room_type': row[0], 'count': row[1]} for row in rows]
@@ -315,14 +315,14 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                """
-                SELECT style_type, COUNT(*) as count
-                FROM generations
-                GROUP BY style_type
-                ORDER BY count DESC
-                LIMIT ?
-                """,
-                (limit,)
+                    """
+                    SELECT style_type, COUNT(*) as count
+                    FROM generations
+                    GROUP BY style_type
+                    ORDER BY count DESC
+                    LIMIT ?
+                    """,
+                    (limit,)
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [{'style_type': row[0], 'count': row[1]} for row in rows]
@@ -354,8 +354,8 @@ class Database:
         date_threshold = datetime.now() - timedelta(days=days)
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "SELECT COUNT(DISTINCT user_id) FROM user_activity WHERE created_at >= ?",
-                (date_threshold.isoformat(),)
+                    "SELECT COUNT(DISTINCT user_id) FROM user_activity WHERE created_at >= ?",
+                    (date_threshold.isoformat(),)
             ) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
@@ -390,8 +390,8 @@ class Database:
                     "notify_critical_errors": row[3],
                 }
 
-    async def set_admin_notifications(self, admin_id: int, notify_new_users: int, 
-                                     notify_new_payments: int, notify_critical_errors: int) -> None:
+    async def set_admin_notifications(self, admin_id: int, notify_new_users: int,
+                                      notify_new_payments: int, notify_critical_errors: int) -> None:
         """
         Установить настройки уведомлений для админа.
         """
@@ -491,12 +491,12 @@ class Database:
     # ===== РЕФЕРАЛЬНЫЕ НАЧИСЛЕНИЯ =====
 
     async def log_referral_earning(self, referrer_id: int, referred_id: int, payment_id: str,
-                                    amount: int, commission_percent: int, earnings: int, tokens: int) -> bool:
+                                   amount: int, commission_percent: int, earnings: int, tokens: int) -> bool:
         """Залогировать заработок реферера"""
         async with aiosqlite.connect(self.db_path) as db:
             try:
                 await db.execute(CREATE_REFERRAL_EARNING,
-                                (referrer_id, referred_id, payment_id, amount, commission_percent, earnings, tokens))
+                                 (referrer_id, referred_id, payment_id, amount, commission_percent, earnings, tokens))
                 await db.commit()
                 return True
             except Exception as e:
@@ -629,8 +629,8 @@ class Database:
         date_threshold = datetime.now() - timedelta(days=days)
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "SELECT COUNT(*) FROM users WHERE reg_date >= ?",
-                (date_threshold.isoformat(),)
+                    "SELECT COUNT(*) FROM users WHERE created_at >= ?",
+                    (date_threshold.isoformat(),)
             ) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
@@ -639,7 +639,7 @@ class Database:
         """Общая выручка"""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "SELECT SUM(amount) FROM payments WHERE status = 'succeeded'"
+                    "SELECT SUM(amount) FROM payments WHERE status = 'succeeded'"
             ) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row and row[0] else 0
@@ -649,8 +649,8 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                "SELECT * FROM users ORDER BY reg_date DESC LIMIT ?",
-                (limit,)
+                    "SELECT * FROM users ORDER BY created_at DESC LIMIT ?",
+                    (limit,)
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
@@ -662,7 +662,7 @@ class Database:
         """
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            
+
             # Пробуем поиск по ID (если запрос - цифры)
             if query.isdigit():
                 user_id = int(query)
@@ -670,23 +670,23 @@ class Database:
                     row = await cursor.fetchone()
                     if row:
                         return dict(row)
-            
+
             # Поиск по username (убираем @ если есть)
             username_query = query.replace('@', '')
             async with db.execute(
-                "SELECT * FROM users WHERE username = ? OR username = ?",
-                (username_query, f"@{username_query}")
+                    "SELECT * FROM users WHERE username = ? OR username = ?",
+                    (username_query, f"@{username_query}")
             ) as cursor:
                 row = await cursor.fetchone()
                 if row:
                     return dict(row)
-            
+
             # Поиск по реферальному коду
             async with db.execute(GET_USER_BY_REFERRAL_CODE, (query,)) as cursor:
                 row = await cursor.fetchone()
                 if row:
                     return dict(row)
-            
+
             return None
 
     async def get_all_users_paginated(self, page: int = 1, per_page: int = 10) -> Tuple[List[Dict[str, Any]], int]:
@@ -696,22 +696,22 @@ class Database:
         """
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            
+
             # Подсчитываем общее количество
             async with db.execute("SELECT COUNT(*) FROM users") as cursor:
                 total = (await cursor.fetchone())[0]
-            
+
             total_pages = (total + per_page - 1) // per_page
             offset = (page - 1) * per_page
-            
+
             # Получаем пользователей для страницы
             async with db.execute(
-                "SELECT * FROM users ORDER BY reg_date DESC LIMIT ? OFFSET ?",
-                (per_page, offset)
+                    "SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (per_page, offset)
             ) as cursor:
                 rows = await cursor.fetchall()
                 users = [dict(row) for row in rows]
-            
+
             return users, total_pages
 
     async def get_revenue_by_period(self, days: int = 1) -> int:
@@ -719,8 +719,8 @@ class Database:
         date_threshold = datetime.now() - timedelta(days=days)
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "SELECT SUM(amount) FROM payments WHERE status = 'succeeded' AND payment_date >= ?",
-                (date_threshold.isoformat(),)
+                    "SELECT SUM(amount) FROM payments WHERE status = 'succeeded' AND created_at >= ?",
+                    (date_threshold.isoformat(),)
             ) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row and row[0] else 0
@@ -729,7 +729,7 @@ class Database:
         """Количество успешных платежей"""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "SELECT COUNT(*) FROM payments WHERE status = 'succeeded'"
+                    "SELECT COUNT(*) FROM payments WHERE status = 'succeeded'"
             ) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
@@ -738,7 +738,7 @@ class Database:
         """Средний чек"""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "SELECT AVG(amount) FROM payments WHERE status = 'succeeded'"
+                    "SELECT AVG(amount) FROM payments WHERE status = 'succeeded'"
             ) as cursor:
                 row = await cursor.fetchone()
                 return int(row[0]) if row and row[0] else 0
@@ -748,14 +748,14 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                """
-                SELECT p.*, u.username 
-                FROM payments p
-                LEFT JOIN users u ON p.user_id = u.user_id
-                ORDER BY p.payment_date DESC
-                LIMIT ?
-                """,
-                (limit,)
+                    """
+                    SELECT p.*, u.username 
+                    FROM payments p
+                    LEFT JOIN users u ON p.user_id = u.user_id
+                    ORDER BY p.created_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,)
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
@@ -770,12 +770,12 @@ class Database:
         """
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                """
-                SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total
-                FROM payments
-                WHERE user_id = ? AND status = 'succeeded'
-                """,
-                (user_id,)
+                    """
+                    SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total
+                    FROM payments
+                    WHERE user_id = ? AND status = 'succeeded'
+                    """,
+                    (user_id,)
             ) as cursor:
                 row = await cursor.fetchone()
                 return {
@@ -788,14 +788,14 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                """
-                SELECT amount, tokens, payment_date, status
-                FROM payments
-                WHERE user_id = ? AND status = 'succeeded'
-                ORDER BY payment_date DESC
-                LIMIT ?
-                """,
-                (user_id, limit)
+                    """
+                    SELECT amount, tokens, created_at as payment_date, status
+                    FROM payments
+                    WHERE user_id = ? AND status = 'succeeded'
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                    """,
+                    (user_id, limit)
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
@@ -804,14 +804,14 @@ class Database:
         """Получить информацию о рефере (кто пригласил)"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            
+
             async with db.execute("SELECT referred_by FROM users WHERE user_id = ?", (user_id,)) as cursor:
                 row = await cursor.fetchone()
                 if not row or not row['referred_by']:
                     return None
-                
+
                 referrer_id = row['referred_by']
-            
+
             async with db.execute(GET_USER, (referrer_id,)) as cursor:
                 referrer_row = await cursor.fetchone()
                 if referrer_row:
@@ -819,8 +819,172 @@ class Database:
                         'referrer_id': referrer_row['user_id'],
                         'referrer_username': referrer_row['username']
                     }
-            
+
             return None
+
+    # ===== CRM / USER_SESSIONS (МИНИ-CRM И МЕНЮ-СООБЩЕНИЯ) =====
+
+    async def log_session(
+        self,
+        user_id: int,
+        session_type: str,
+        action: str,
+        message_id: Optional[int] = None,
+        room_type: Optional[str] = None,
+        style_type: Optional[str] = None,
+        source: Optional[str] = None,
+        campaign: Optional[str] = None,
+        promo_code: Optional[str] = None,
+        balance_before: Optional[int] = None,
+        balance_after: Optional[int] = None,
+        cost: int = 0,
+        status: str = "completed",
+        error_message: Optional[str] = None,
+    ) -> bool:
+        """
+        Записать действие пользователя в таблицу user_sessions (мини-CRM).
+
+        Использование:
+        - Для меню:   session_type='menu', action='show_menu', message_id=<id сообщения>
+        - Для фото:   session_type='photo', action='upload_photo', message_id=<id фото>
+        - Для генераций: session_type='generation', action='generate_design',
+                         room_type, style_type, cost, balance_before/after.
+        - Для платежей: session_type='payment', action='buy_tokens', cost=<сумма и т.п.>
+
+        Параметры:
+        - user_id: ID пользователя
+        - session_type: логический тип записи ('menu', 'photo', 'generation', 'payment', 'profile' и т.п.)
+        - action: конкретное действие ('show_menu', 'upload_photo', 'generate_design', 'clear_space', ...)
+        - message_id: ID связанного Telegram-сообщения (меню/картинка/результат)
+        - room_type: тип комнаты (если релевантно)
+        - style_type: стиль интерьера (если релевантно)
+        - source / campaign / promo_code: маркетинговые метки
+        - balance_before / balance_after: баланс до и после действия
+        - cost: стоимость действия (рубли/токены, по твоей бизнес-логике)
+        - status: 'completed' | 'failed' | 'pending' | 'cancelled'
+        - error_message: текст ошибки, если действие было неуспешным
+
+        Возвращает:
+        - True при успехе, False при ошибке (ошибка логируется).
+        """
+        query = """
+            INSERT INTO user_sessions (
+                user_id, session_type, message_id, action,
+                room_type, style_type,
+                source, campaign, promo_code,
+                balance_before, balance_after, cost,
+                status, error_message
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        params = (
+            user_id,
+            session_type,
+            message_id,
+            action,
+            room_type,
+            style_type,
+            source,
+            campaign,
+            promo_code,
+            balance_before,
+            balance_after,
+            cost,
+            status,
+            error_message,
+        )
+
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                await db.execute(query, params)
+                await db.commit()
+                return True
+            except Exception as e:
+                logger.error(f"Ошибка log_session для user_id={user_id}: {e}")
+                return False
+
+    async def get_last_menu_message(self, user_id: int) -> Optional[int]:
+        """
+        Получить ID последнего меню-сообщения пользователя.
+
+        Логика:
+        - Ищем последнюю запись в user_sessions, где:
+          - user_id = ?
+          - session_type = 'menu'
+          - message_id НЕ NULL
+        - Сортируем по created_at DESC (или id DESC) и берём первую.
+
+        Возвращает:
+        - message_id (int), если найдено
+        - None, если меню ещё не логировалось.
+        """
+        query = """
+            SELECT message_id
+            FROM user_sessions
+            WHERE user_id = ? AND session_type = 'menu' AND message_id IS NOT NULL
+            ORDER BY id DESC
+            LIMIT 1
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(query, (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row and row[0]:
+                    return row[0]
+                return None
+
+    async def get_last_session_by_type(self, user_id: int, session_type: str) -> Optional[Dict[str, Any]]:
+        """
+        Получить последнюю запись из user_sessions по user_id и session_type.
+
+        Примеры:
+        - Последняя генерация:
+          await db.get_last_session_by_type(user_id, 'generation')
+        - Последняя загрузка фото:
+          await db.get_last_session_by_type(user_id, 'photo')
+
+        Возвращает:
+        - dict с полями строки (id, user_id, session_type, message_id, action, ...),
+        - или None, если записей нет.
+        """
+        query = """
+            SELECT *
+            FROM user_sessions
+            WHERE user_id = ? AND session_type = ?
+            ORDER BY id DESC
+            LIMIT 1
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(query, (user_id, session_type)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return dict(row)
+                return None
+
+    async def get_user_sessions(self, user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Получить последние N записей активности пользователя из user_sessions (мини-CRM).
+
+        Параметры:
+        - user_id: ID пользователя
+        - limit: максимальное количество записей (по умолчанию 50)
+
+        Возвращает:
+        - список dict'ов с полями user_sessions, отсортированных по created_at DESC.
+        """
+        query = """
+            SELECT *
+            FROM user_sessions
+            WHERE user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(query, (user_id, limit)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(r) for r in rows]
+
 
 
 # Создаем глобальный экземпляр
