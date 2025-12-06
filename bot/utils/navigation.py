@@ -15,6 +15,7 @@ from utils.helpers import add_balance_to_text  # НОВЫЙ ИМПОРТ для 
 
 logger = logging.getLogger(__name__)
 
+
 async def edit_menu(
     callback: CallbackQuery,
     state: FSMContext,
@@ -27,7 +28,7 @@ async def edit_menu(
     Универсальная функция редактирования единого меню.
     Всегда редактирует ОДНО сообщение - никаких новых сообщений.
     АВТОМАТИЧЕСКИ ДОБАВЛЯЕТ БАЛАНС к тексту.
-    
+
     Args:
         callback: CallbackQuery объект
         state: FSMContext для получения menu_message_id
@@ -35,7 +36,7 @@ async def edit_menu(
         keyboard: Новая клавиатура (может быть None)
         parse_mode: Режим парсинга (по умолчанию Markdown)
         show_balance: Показывать ли баланс (по умолчанию True)
-    
+
     Returns:
         bool: True если успешно отредактировано, False если создано новое
     """
@@ -43,10 +44,10 @@ async def edit_menu(
     if show_balance:
         user_id = callback.from_user.id
         text = await add_balance_to_text(text, user_id)
-    
+
     data = await state.get_data()
     menu_message_id = data.get('menu_message_id')
-    
+
     if not menu_message_id:
         # Fallback: если ID потерян, создаем новое и сохраняем
         logger.warning(f"Menu message ID lost for user {callback.from_user.id}, creating new message")
@@ -57,7 +58,7 @@ async def edit_menu(
         )
         await state.update_data(menu_message_id=new_msg.message_id)
         return False
-    
+
     try:
         # Основной путь: редактируем существующее сообщение
         await callback.message.bot.edit_message_text(
@@ -69,13 +70,13 @@ async def edit_menu(
         )
         logger.debug(f"✅ Menu edited successfully (msg_id={menu_message_id})")
         return True
-        
+
     except TelegramBadRequest as e:
         # Если текст не изменился или другая ошибка
         if "message is not modified" in str(e).lower():
             logger.debug(f"Menu text unchanged (msg_id={menu_message_id})")
             return True
-        
+
         logger.error(f"Failed to edit menu message: {e}")
         # Создаем новое сообщение как fallback
         new_msg = await callback.message.answer(
@@ -85,7 +86,7 @@ async def edit_menu(
         )
         await state.update_data(menu_message_id=new_msg.message_id)
         return False
-    
+
     except Exception as e:
         logger.error(f"Unexpected error editing menu: {e}")
         return False
@@ -99,23 +100,23 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: lis
     """
     from keyboards.inline import get_main_menu_keyboard
     from utils.texts import START_TEXT
-    
+
     # Очищаем все данные, КРОМЕ menu_message_id
     data = await state.get_data()
     menu_message_id = data.get('menu_message_id')
-    
-    await state.clear()
-    
-    # Восстанавливаем menu_message_id
-    if menu_message_id:
-        await state.update_data(menu_message_id=menu_message_id)
-    
+
+    # Очищаем состояние, но БЕЗ потери menu_message_id
+    await state.set_state(None)  # Сбрасываем состояние FSM
+
+    # Оставляем только menu_message_id
+    await state.set_data({'menu_message_id': menu_message_id})
+
     logger.debug(f"🏠 Returning to main menu for user {callback.from_user.id}")
-    
+
     # Добавляем баланс к стартовому тексту
     user_id = callback.from_user.id
     text = await add_balance_to_text(START_TEXT, user_id)
-    
+
     await edit_menu(
         callback=callback,
         state=state,
@@ -135,24 +136,24 @@ async def update_menu_after_photo(
     """
     Обновление меню после загрузки фото пользователем.
     Используется в message handlers, а не callback handlers.
-    
+
     Args:
         message: Message объект (сообщение с фото)
         state: FSMContext
         text: Новый текст меню
         keyboard: Новая клавиатура
         parse_mode: Режим парсинга
-    
+
     Returns:
         bool: True если успешно
     """
     data = await state.get_data()
     menu_message_id = data.get('menu_message_id')
-    
+
     if not menu_message_id:
         logger.warning(f"Menu message ID not found for user {message.from_user.id}")
         return False
-    
+
     try:
         await message.bot.edit_message_text(
             chat_id=message.chat.id,
@@ -163,11 +164,11 @@ async def update_menu_after_photo(
         )
         logger.debug(f"✅ Menu updated after photo upload (msg_id={menu_message_id})")
         return True
-        
+
     except TelegramBadRequest as e:
         logger.error(f"Failed to update menu after photo: {e}")
         return False
-    
+
     except Exception as e:
         logger.error(f"Unexpected error updating menu: {e}")
         return False
