@@ -95,35 +95,39 @@ async def edit_menu(
 async def show_main_menu(callback: CallbackQuery, state: FSMContext, admins: list[int]):
     """
     Показать главное меню.
-    Очищает все состояния FSM и возвращает в начальный экран.
-    АВТОМАТИЧЕСКИ ДОБАВЛЯЕТ БАЛАНС к тексту.
+    НЕ трогаем menu_message_id, НЕ затираем данные.
+    Просто сбрасываем состояние и редактируем уже существующее меню.
     """
     from keyboards.inline import get_main_menu_keyboard
     from utils.texts import START_TEXT
 
-    # Очищаем все данные, КРОМЕ menu_message_id
-    data = await state.get_data()
-    menu_message_id = data.get('menu_message_id')
-
-    # Очищаем состояние, но БЕЗ потери menu_message_id
-    await state.set_state(None)  # Сбрасываем состояние FSM
-
-    # Оставляем только menu_message_id
-    await state.set_data({'menu_message_id': menu_message_id})
-
-    logger.debug(f"🏠 Returning to main menu for user {callback.from_user.id}")
-
-    # Добавляем баланс к стартовому тексту
     user_id = callback.from_user.id
+
+    data = await state.get_data()
+    photo_message_id = data.get('photo_message_id')
+    design_generated = data.get('design_generated', False)
+
+    logger.info(f"🏠 [MAIN MENU] BEFORE: photo={photo_message_id}, design={design_generated}")
+    logger.debug(f"🏠 Returning to main menu for user {user_id}")
+
+    # Сбрасываем ТОЛЬКО состояние FSM, данные не трогаем
+    await state.set_state(None)
+
+    # Текст с балансом
     text = await add_balance_to_text(START_TEXT, user_id)
 
+    # Пытаемся отредактировать текущее меню
     await edit_menu(
         callback=callback,
         state=state,
         text=text,
-        keyboard=get_main_menu_keyboard(is_admin=callback.from_user.id in admins),
-        show_balance=False  # Уже добавили выше вручную
+        keyboard=get_main_menu_keyboard(is_admin=user_id in admins),
+        show_balance=False  # баланс уже в тексте
     )
+
+    await callback.answer()
+
+
 
 
 async def update_menu_after_photo(
