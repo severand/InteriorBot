@@ -69,20 +69,28 @@ def get_upload_photo_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-
 def get_profile_keyboard() -> InlineKeyboardMarkup:
-    """Профиль с реферальными кнопками"""
+    """Профиль с новой структурой кнопок (5 кнопок)"""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="💳 Купить генерации", callback_data="buy_generations"))
+
+    # Ряд 1: Купить генерации | Статистика
     builder.row(
-        InlineKeyboardButton(text="💸 Вывести деньги", callback_data="referral_request_payout"),
-        InlineKeyboardButton(text="💎 Обменять на генерации", callback_data="referral_exchange_tokens")
+        InlineKeyboardButton(text="💳 Стоимость генераций", callback_data="buy_generations"),
+        InlineKeyboardButton(text="📊 Статистика", callback_data="show_statistics")
     )
-    builder.row(InlineKeyboardButton(text="⚙️ Реквизиты для выплат", callback_data="referral_setup_payment"))
-    builder.row(InlineKeyboardButton(text="📊 История операций", callback_data="referral_history"))
+
+    # Ряд 2: Партнёрская программа | Поддержка
+    builder.row(
+        InlineKeyboardButton(text="🎁 Партнёрская программа", callback_data="show_referral_program"),
+        InlineKeyboardButton(text="💬 Поддержка", callback_data="show_support")
+    )
+
+    # Ряд 3: Главное меню (широкая кнопка)
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
-    builder.adjust(2)
+
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
+
 
 def get_room_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура выбора комнаты с кнопкой 'Очистить пространство'"""
@@ -125,7 +133,7 @@ def get_payment_keyboard() -> InlineKeyboardMarkup:
         button_text = f"{tokens} генераций - {price} руб."
         builder.row(InlineKeyboardButton(text=button_text, callback_data=f"pay_{tokens}_{price}"))
     builder.row(InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data="show_profile"))
-    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+   # builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     builder.adjust(1)
     return builder.as_markup()
 
